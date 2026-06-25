@@ -33,33 +33,27 @@ function toGrayscale(data: Uint8ClampedArray, width: number, height: number): Ui
   return gray;
 }
 
-function adaptiveThreshold(
+function globalThreshold(
   gray: Uint8Array,
   width: number,
-  height: number,
-  blockSize: number = 11,
-  C: number = 7
+  height: number
 ): Uint8Array {
   const binary = new Uint8Array(width * height);
-  const half = Math.floor(blockSize / 2);
+  
+  // Znajdź przybliżoną średnią jasność
+  let sum = 0;
+  // Próbkowanie co 4 piksele dla szybkości
+  for (let i = 0; i < gray.length; i += 4) {
+    sum += gray[i];
+  }
+  const mean = sum / (gray.length / 4);
+  
+  // Próg to znacznie ciemniejsze niż średnia (np. o 40)
+  // albo sztywny próg 100 dla ciemnych elementów na jasnym papierze
+  const thresholdValue = Math.min(mean - 30, 100);
 
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      let sum = 0;
-      let count = 0;
-      for (let dy = -half; dy <= half; dy++) {
-        for (let dx = -half; dx <= half; dx++) {
-          const nx = x + dx;
-          const ny = y + dy;
-          if (nx >= 0 && nx < width && ny >= 0 && ny < height) {
-            sum += gray[ny * width + nx];
-            count++;
-          }
-        }
-      }
-      const mean = sum / count;
-      binary[y * width + x] = gray[y * width + x] < mean - C ? 1 : 0;
-    }
+  for (let i = 0; i < gray.length; i++) {
+    binary[i] = gray[i] < thresholdValue ? 1 : 0;
   }
   return binary;
 }
@@ -194,8 +188,8 @@ export function detectArucoMarker(
     // 2. Grayscale
     const gray = toGrayscale(processData, processWidth, processHeight);
 
-    // 3. Adaptive threshold
-    const binary = adaptiveThreshold(gray, processWidth, processHeight, 21, 7);
+    // 3. Global threshold (zamiast powolnego i niszczącego kształty adaptive)
+    const binary = globalThreshold(gray, processWidth, processHeight);
 
     // 4. Znajdź komponenty
     const components = findConnectedComponents(binary, processWidth, processHeight);
@@ -211,8 +205,9 @@ export function detectArucoMarker(
       const w = maxX - minX;
       const h = maxY - minY;
 
-      // Marker powinien być minimum 2% i max 60% szerokości obrazu
-      if (w < processWidth * 0.02 || w > processWidth * 0.6) continue;
+      // Marker powinien zajmować minimum 8% i max 60% szerokości obrazu
+      // 8% na 600px to 48px, idealnie wyklucza szum (stare 2% to było 12px!)
+      if (w < processWidth * 0.08 || w > processWidth * 0.6) continue;
 
       // Sprawdź czy obszar wewnątrz ma wzór czarnej ramki (border)
       const borderOk = checkBlackBorder(binary, processWidth, minX, minY, maxX, maxY);

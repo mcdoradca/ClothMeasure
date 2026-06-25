@@ -34,9 +34,15 @@ export default function CropScreen() {
   
   // Ref śledzący zawsze najnowszą wartość stanu, omijający stale closure w PanResponder
   const latestCropBox = useRef(cropBox);
+  const latestImageLayout = useRef(imageLayout);
+  
   useEffect(() => {
     latestCropBox.current = cropBox;
   }, [cropBox]);
+
+  useEffect(() => {
+    latestImageLayout.current = imageLayout;
+  }, [imageLayout]);
 
   const createPanResponder = (handle: 'top' | 'bottom' | 'left' | 'right') => {
     return PanResponder.create({
@@ -46,6 +52,7 @@ export default function CropScreen() {
       },
       onPanResponderMove: (_evt, gestureState) => {
         const start = gestureStartCropBox.current;
+        const layout = latestImageLayout.current;
         const next = { ...start };
 
         if (handle === 'top') next.top = Math.max(0, start.top + gestureState.dy);
@@ -53,8 +60,8 @@ export default function CropScreen() {
         if (handle === 'left') next.left = Math.max(0, start.left + gestureState.dx);
         if (handle === 'right') next.right = Math.max(0, start.right - gestureState.dx);
 
-        if (imageLayout.height - next.top - next.bottom < 50) return;
-        if (imageLayout.width - next.left - next.right < 50) return;
+        if (layout.height - next.top - next.bottom < 50) return;
+        if (layout.width - next.left - next.right < 50) return;
 
         setCropBox(next);
       },
