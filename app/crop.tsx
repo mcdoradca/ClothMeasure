@@ -79,13 +79,45 @@ export default function CropScreen() {
     setIsProcessing(true);
 
     try {
-      const scaleX = actualImageSize.width / imageLayout.width;
-      const scaleY = actualImageSize.height / imageLayout.height;
+      // Image w React Native z resizeMode="contain" dodaje puste paski (letterbox/pillarbox).
+      // Musimy wyliczyć RZECZYWISTY rozmiar i pozycję wyświetlanego zdjęcia na ekranie:
+      const viewAspect = imageLayout.width / imageLayout.height;
+      const imgAspect = actualImageSize.width / actualImageSize.height;
 
-      const originX = Math.floor(cropBox.left * scaleX);
-      const originY = Math.floor(cropBox.top * scaleY);
-      const width = Math.floor((imageLayout.width - cropBox.left - cropBox.right) * scaleX);
-      const height = Math.floor((imageLayout.height - cropBox.top - cropBox.bottom) * scaleY);
+      let visualWidth = imageLayout.width;
+      let visualHeight = imageLayout.height;
+      let offsetX = 0;
+      let offsetY = 0;
+
+      if (imgAspect > viewAspect) {
+        // Zdjęcie ograniczone szerokością ekranu (letterbox na górze i dole)
+        visualHeight = imageLayout.width / imgAspect;
+        offsetY = (imageLayout.height - visualHeight) / 2;
+      } else {
+        // Zdjęcie ograniczone wysokością ekranu (pillarbox po bokach)
+        visualWidth = imageLayout.height * imgAspect;
+        offsetX = (imageLayout.width - visualWidth) / 2;
+      }
+
+      // Skala z wyświetlanego (rzeczywistego) obrazka na wymiary surowego pliku
+      const scale = actualImageSize.width / visualWidth;
+
+      // Odejmujemy letterboxy, żeby uzyskać pozycję w obrębie wyświetlanego zdjęcia
+      const realLeft = Math.max(0, cropBox.left - offsetX);
+      const realTop = Math.max(0, cropBox.top - offsetY);
+      const realRight = Math.max(0, cropBox.right - offsetX);
+      const realBottom = Math.max(0, cropBox.bottom - offsetY);
+
+      let originX = Math.floor(realLeft * scale);
+      let originY = Math.floor(realTop * scale);
+      let width = Math.floor((visualWidth - realLeft - realRight) * scale);
+      let height = Math.floor((visualHeight - realTop - realBottom) * scale);
+
+      // Zabezpieczenie przed wyjściem poza granice surowego pliku
+      originX = Math.max(0, Math.min(originX, actualImageSize.width - 1));
+      originY = Math.max(0, Math.min(originY, actualImageSize.height - 1));
+      width = Math.max(1, Math.min(width, actualImageSize.width - originX));
+      height = Math.max(1, Math.min(height, actualImageSize.height - originY));
 
       const cropped = await ImageManipulator.manipulateAsync(
         capturedImageUri,
