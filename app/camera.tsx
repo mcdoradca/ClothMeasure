@@ -160,14 +160,6 @@ export default function CameraScreen() {
           </View>
         </View>
 
-        {/* Wskaźnik markera */}
-        <View style={styles.markerIndicator}>
-          <View style={[styles.markerDot, { backgroundColor: '#FF6B6B' }]} />
-          <Text style={styles.markerText}>Marker niewidoczny</Text>
-          <TouchableOpacity onPress={() => router.push('/guide')}>
-            <Text style={styles.markerHelpLink}>Co to marker?</Text>
-          </TouchableOpacity>
-        </View>
 
         {/* Zoom Controls */}
         <View style={styles.zoomControls}>
@@ -332,33 +324,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 20,
   },
-  markerIndicator: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: 'rgba(0,0,0,0.6)',
-    marginHorizontal: 40,
-    borderRadius: 10,
-    paddingVertical: 8,
-    paddingHorizontal: 14,
-    gap: 8,
-    marginBottom: 8,
-  },
-  markerDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-  },
-  markerText: {
-    fontSize: 13,
-    color: 'rgba(255,255,255,0.7)',
-    flex: 1,
-  },
-  markerHelpLink: {
-    fontSize: 13,
-    color: '#00E5FF',
-    fontWeight: '600',
-  },
+
   bottomBar: {
     flexDirection: 'row',
     alignItems: 'center',
