@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  MARKER ARUCO 4x4_50 ID:1
+  ========================
+  Wydrukuj w ROZMIARZE 10×10 cm (100mm × 100mm)
+  Sprawdź skalę wydruku: WYŁĄCZ skalowanie do strony w ustawieniach drukarki!
+  Możesz też wydrukować razem z ramką 15×15 cm dla łatwiejszego korzystania.
+-->
+<svg xmlns="http://www.w3.org/2000/svg"
+     viewBox="0 0 700 700"
+     width="100mm" height="100mm">
+
+  <!-- Tło białe -->
+  <rect width="700" height="700" fill="white"/>
+
+  <!-- Marker ArUco 4x4_50 ID:1 -->
+  <!-- Grid 6x6 (border 1px + 4x4 dane + border 1px) -->
+  <!-- Każda komórka = 700/6 ≈ 116.67px -->
+
+  <!-- Wiersz 0 - cała czarna ramka górna -->
+  <rect x="0"   y="0"   width="117" height="117" fill="black"/>
+  <rect x="117" y="0"   width="117" height="117" fill="black"/>
+  <rect x="234" y="0"   width="117" height="117" fill="black"/>
+  <rect x="351" y="0"   width="117" height="117" fill="black"/>
+  <rect x="468" y="0"   width="116" height="117" fill="black"/>
+  <rect x="584" y="0"   width="116" height="117" fill="black"/>
+
+  <!-- Wiersz 1 -->
+  <rect x="0"   y="117" width="117" height="117" fill="black"/>
+  <rect x="117" y="117" width="117" height="117" fill="white"/>  <!-- 0 -->
+  <rect x="234" y="117" width="117" height="117" fill="black"/>  <!-- 1 -->
+  <rect x="351" y="117" width="117" height="117" fill="white"/>  <!-- 0 -->
+  <rect x="468" y="117" width="116" height="117" fill="black"/>  <!-- 1 -->
+  <rect x="584" y="117" width="116" height="117" fill="black"/>
+
+  <!-- Wiersz 2 -->
+  <rect x="0"   y="234" width="117" height="117" fill="black"/>
+  <rect x="117" y="234" width="117" height="117" fill="black"/>  <!-- 1 -->
+  <rect x="234" y="234" width="117" height="117" fill="white"/>  <!-- 0 -->
+  <rect x="351" y="234" width="117" height="117" fill="black"/>  <!-- 1 -->
+  <rect x="468" y="234" width="116" height="117" fill="white"/>  <!-- 0 -->
+  <rect x="584" y="234" width="116" height="117" fill="black"/>
+
+  <!-- Wiersz 3 -->
+  <rect x="0"   y="351" width="117" height="117" fill="black"/>
+  <rect x="117" y="351" width="117" height="117" fill="white"/>  <!-- 0 -->
+  <rect x="234" y="351" width="117" height="117" fill="white"/>  <!-- 0 -->
+  <rect x="351" y="351" width="117" height="117" fill="black"/>  <!-- 1 -->
+  <rect x="468" y="351" width="116" height="117" fill="white"/>  <!-- 0 -->
+  <rect x="584" y="351" width="116" height="117" fill="black"/>
+
+  <!-- Wiersz 4 -->
+  <rect x="0"   y="468" width="117" height="116" fill="black"/>
+  <rect x="117" y="468" width="117" height="116" fill="black"/>  <!-- 1 -->
+  <rect x="234" y="468" width="117" height="116" fill="white"/>  <!-- 0 -->
+  <rect x="351" y="468" width="117" height="116" fill="black"/>  <!-- 1 -->
+  <rect x="468" y="468" width="116" height="116" fill="black"/>  <!-- 1 -->
+  <rect x="584" y="468" width="116" height="116" fill="black"/>
+
+  <!-- Wiersz 5 - cała czarna ramka dolna -->
+  <rect x="0"   y="584" width="117" height="116" fill="black"/>
+  <rect x="117" y="584" width="117" height="116" fill="black"/>
+  <rect x="234" y="584" width="117" height="116" fill="black"/>
+  <rect x="351" y="584" width="117" height="116" fill="black"/>
+  <rect x="468" y="584" width="116" height="116" fill="black"/>
+  <rect x="584" y="584" width="116" height="116" fill="black"/>
+
+  <!-- Etykieta pod markerem -->
+  <text
+    x="350" y="680"
+    text-anchor="middle"
+    font-family="Arial, sans-serif"
+    font-size="28"
+    fill="#333333"
+  >ClothMeasure — Marker 10×10 cm (ID:1)</text>
+</svg>
