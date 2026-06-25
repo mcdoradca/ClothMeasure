@@ -17,9 +17,8 @@ import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { SvgXml } from 'react-native-svg';
-import * as MediaLibrary from 'expo-media-library';
 import * as Sharing from 'expo-sharing';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { useMeasurementStore } from '../src/stores/measurementStore';
 import { getGarmentName } from '../src/algorithms/annotation';
 import { GarmentMeasurements } from '../src/types';
@@ -29,7 +28,6 @@ const { width: SCREEN_W } = Dimensions.get('window');
 export default function ResultScreen() {
   const currentResult = useMeasurementStore((s) => s.currentResult);
   const addToHistory = useMeasurementStore((s) => s.addToHistory);
-  const [mediaPermission, requestMediaPermission] = MediaLibrary.usePermissions();
   const [saved, setSaved] = useState(false);
   const [showSvgOverlay, setShowSvgOverlay] = useState(true);
 
@@ -64,36 +62,26 @@ export default function ResultScreen() {
 
   const handleSave = async () => {
     try {
-      if (!mediaPermission?.granted) {
-        const { granted } = await requestMediaPermission();
-        if (!granted) {
-          Alert.alert('Brak uprawnień', 'Zezwól na zapis do galerii w ustawieniach.');
-          return;
-        }
+      if (await Sharing.isAvailableAsync()) {
+        await Sharing.shareAsync(imageUri, {
+          mimeType: 'image/jpeg',
+          dialogTitle: 'Zapisz lub udostępnij zdjęcie',
+        });
+        setSaved(true);
+      } else {
+        Alert.alert('Błąd', 'Opcja eksportu jest niedostępna na tym urządzeniu.');
       }
-
-      await MediaLibrary.saveToLibraryAsync(imageUri);
-      setSaved(true);
-      Alert.alert('Zapisano', 'Zdjęcie z pomiarami zostało zapisane do galerii.');
     } catch (e) {
-      Alert.alert('Błąd', 'Nie udało się zapisać zdjęcia.');
-      console.error('[Result] Błąd zapisu:', e);
+      console.error('[Result] Błąd eksportu:', e);
     }
   };
 
   const handleShare = async () => {
     try {
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(imageUri, {
-          mimeType: 'image/jpeg',
-          dialogTitle: 'Udostępnij pomiary ubrania',
-        });
-      } else {
-        await Share.share({
-          message: formatMeasurementsText(measurements!),
-          title: 'Pomiary ubrania — ClothMeasure',
-        });
-      }
+      await Share.share({
+        message: formatMeasurementsText(measurements!),
+        title: 'Pomiary ubrania — ClothMeasure',
+      });
     } catch (e) {
       console.error('[Result] Błąd udostępniania:', e);
     }

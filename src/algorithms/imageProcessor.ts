@@ -3,7 +3,7 @@
 // Używa expo-image-manipulator do dostępu do pikseli
 // =========================================
 
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { ProcessingResult } from '../types';
 import { detectArucoMarker } from './arucoDetector';
@@ -14,6 +14,7 @@ import {
   estimatePixelPerCmFromImageSize,
 } from './measurement';
 import { renderAnnotations } from './annotation';
+import { zlibDecompress, unfilterPNG } from './inflate';
 
 const MAX_PROCESS_WIDTH = 1200; // px — balans jakość/wydajność
 
@@ -220,13 +221,10 @@ function decodePNGBase64ToRGBA(
 
 /**
  * Minimalistyczny parser PNG — obsługuje 8-bit RGB i RGBA.
+ * Używa wbudowanego dekodera zlib (inflate.ts) do dekompresji IDAT chunks.
  */
 function parsePNGBytes(bytes: Uint8Array, width: number, height: number): Uint8ClampedArray {
   // Signature: 8 bytes
-  // IHDR: 4(len) + 4(type) + 13(data) + 4(crc) = 25 bytes
-  // IDAT: skompresowane dane
-
-  // Szukaj sygnatury PNG
   if (
     bytes[0] !== 0x89 || bytes[1] !== 0x50 ||
     bytes[2] !== 0x4e || bytes[3] !== 0x47
@@ -235,11 +233,22 @@ function parsePNGBytes(bytes: Uint8Array, width: number, height: number): Uint8C
   }
 
   // Odczytaj IHDR
-  // Offset 8: IHDR chunk
   const pngWidth = (bytes[16] << 24) | (bytes[17] << 16) | (bytes[18] << 8) | bytes[19];
   const pngHeight = (bytes[20] << 24) | (bytes[21] << 16) | (bytes[22] << 8) | bytes[23];
   const bitDepth = bytes[24];
   const colorType = bytes[25]; // 2=RGB, 6=RGBA
+
+  if (bitDepth !== 8) {
+    console.warn(`[PNG] Nieobsługiwana głębia: ${bitDepth}, spadam do syntezy`);
+    return generateSyntheticPixelData(pngWidth || width, pngHeight || height);
+  }
+
+  if (colorType !== 2 && colorType !== 6) {
+    console.warn(`[PNG] Nieobsługiwany colorType: ${colorType}, spadam do syntezy`);
+    return generateSyntheticPixelData(pngWidth || width, pngHeight || height);
+  }
+
+  const channels = colorType === 6 ? 4 : 3;
 
   // Zbierz wszystkie IDAT chunks
   const idatChunks: Uint8Array[] = [];
@@ -261,15 +270,32 @@ function parsePNGBytes(bytes: Uint8Array, width: number, height: number): Uint8C
     if (chunkType === 'IEND') break;
   }
 
-  // PNG używa deflate — bez natywnego decodera nie zdekompresujemy w czystym JS
-  // Zwróć dane zastępcze z prawidłowymi wymiarami
-  return generateSyntheticPixelData(pngWidth || width, pngHeight || height);
+  if (idatChunks.length === 0) {
+    throw new Error('PNG: brak chunków IDAT');
+  }
+
+  // Połącz wszystkie IDAT chunks w jeden bufor
+  const totalLen = idatChunks.reduce((sum, c) => sum + c.length, 0);
+  const compressedData = new Uint8Array(totalLen);
+  let pos = 0;
+  for (const chunk of idatChunks) {
+    compressedData.set(chunk, pos);
+    pos += chunk.length;
+  }
+
+  // Dekompresja zlib → surowe scanlines PNG
+  const rawData = zlibDecompress(compressedData);
+
+  const w = pngWidth || width;
+  const h = pngHeight || height;
+
+  // Unfiltruj scanlines i konwertuj do RGBA
+  return unfilterPNG(rawData, w, h, channels);
 }
 
 /**
  * Generuje syntetyczne dane pikseli (szarobrązowy gradient)
- * używane gdy dekodowanie PNG nie jest możliwe.
- * Edge detection w takim przypadku wykrywa ramkę obrazu.
+ * używane TYLKO gdy dekodowanie PNG nie jest możliwe (unsupported colorType/bitDepth).
  */
 function generateSyntheticPixelData(width: number, height: number): Uint8ClampedArray {
   const data = new Uint8ClampedArray(width * height * 4);
@@ -291,3 +317,4 @@ function generateSyntheticPixelData(width: number, height: number): Uint8Clamped
   }
   return data;
 }
+

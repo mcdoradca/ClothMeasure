@@ -178,15 +178,15 @@ export function detectArucoMarker(
   imageHeight: number
 ): ArucoMarker | null {
   try {
-    // 1. Skalowanie do max 800px dla wydajności
+    // 1. Skalowanie do max 1200px dla wydajności przy zachowaniu detali Aruco
     let processWidth = imageWidth;
     let processHeight = imageHeight;
     let processData = pixelData;
     let scale = 1;
 
-    if (imageWidth > 800) {
-      scale = imageWidth / 800;
-      processWidth = 800;
+    if (imageWidth > 1200) {
+      scale = imageWidth / 1200;
+      processWidth = 1200;
       processHeight = Math.round(imageHeight / scale);
       processData = downsampleRGBA(pixelData, imageWidth, imageHeight, processWidth, processHeight);
     }
@@ -195,7 +195,7 @@ export function detectArucoMarker(
     const gray = toGrayscale(processData, processWidth, processHeight);
 
     // 3. Adaptive threshold
-    const binary = adaptiveThreshold(gray, processWidth, processHeight, 15, 10);
+    const binary = adaptiveThreshold(gray, processWidth, processHeight, 21, 7);
 
     // 4. Znajdź komponenty
     const components = findConnectedComponents(binary, processWidth, processHeight);
@@ -211,11 +211,11 @@ export function detectArucoMarker(
       const w = maxX - minX;
       const h = maxY - minY;
 
-      // Marker powinien być minimum 5% i max 60% szerokości obrazu
-      if (w < processWidth * 0.05 || w > processWidth * 0.6) continue;
+      // Marker powinien być minimum 2% i max 60% szerokości obrazu
+      if (w < processWidth * 0.02 || w > processWidth * 0.6) continue;
 
       // Sprawdź czy obszar wewnątrz ma wzór czarnej ramki (border)
-      const borderOk = checkBlackBorder(gray, processWidth, minX, minY, maxX, maxY);
+      const borderOk = checkBlackBorder(binary, processWidth, minX, minY, maxX, maxY);
       if (!borderOk) continue;
 
       // Oblicz narożniki w oryginalnej skali
@@ -248,7 +248,7 @@ export function detectArucoMarker(
 }
 
 function checkBlackBorder(
-  gray: Uint8Array,
+  binary: Uint8Array,
   width: number,
   minX: number, minY: number,
   maxX: number, maxY: number
@@ -260,14 +260,24 @@ function checkBlackBorder(
   let darkCount = 0;
   let totalSamples = 0;
 
-  // Próbkuj krawędź zewnętrzną
+  // Próbkuj krawędź zewnętrzną (binary === 1 to piksele ciemne)
   for (let x = minX; x <= maxX; x += sampleStep) {
     if (x >= 0 && x < width && minY >= 0) {
-      if (gray[minY * width + x] < 80) darkCount++;
+      if (binary[minY * width + x] === 1) darkCount++;
       totalSamples++;
     }
-    if (x >= 0 && x < width && maxY >= 0 && maxY < gray.length / width) {
-      if (gray[maxY * width + x] < 80) darkCount++;
+    if (x >= 0 && x < width && maxY >= 0 && maxY < binary.length / width) {
+      if (binary[maxY * width + x] === 1) darkCount++;
+      totalSamples++;
+    }
+  }
+  for (let y = minY; y <= maxY; y += sampleStep) {
+    if (minX >= 0 && minX < width && y >= 0 && y < binary.length / width) {
+      if (binary[y * width + minX] === 1) darkCount++;
+      totalSamples++;
+    }
+    if (maxX >= 0 && maxX < width && y >= 0 && y < binary.length / width) {
+      if (binary[y * width + maxX] === 1) darkCount++;
       totalSamples++;
     }
   }

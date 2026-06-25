@@ -4,7 +4,7 @@
 // Używa SVG overlay zapisywanego do pliku
 // =========================================
 
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 import { ArucoMarker, GarmentMeasurements, MeasurementLine } from '../types';
 
 /**

@@ -186,12 +186,15 @@ function detectGarmentType(widthCm: number, lengthCm: number): GarmentType {
   const ratio = lengthCm / widthCm;
 
   if (widthCm < 40 && lengthCm < 40) return 'shorts';
-  if (ratio < 0.8) return 'shirt'; // szeroka, krótka
-  if (ratio < 1.0) return 'tshirt';
-  if (ratio > 2.5 && widthCm < 50) return 'pants';
-  if (ratio > 1.8 && widthCm < 60) return 'dress';
-  if (ratio > 1.5) return 'skirt';
-  if (widthCm > 60) return 'jacket';
+  if (ratio > 2.2 && widthCm < 50) return 'pants';
+  if (ratio > 1.7 && widthCm < 60) return 'dress';
+  if (ratio > 1.4 && widthCm > 60) return 'jacket';
+  if (ratio > 1.4 && widthCm < 60) return 'skirt';
+  
+  // Jeśli proporcje są bliskie kwadratowi lub prostokątowi, 
+  // domyślnie wybieramy t-shirt (najbardziej powszechny).
+  // Koszula musiałaby mieć bardzo konkretne cechy (np. długie rękawy szeroko rozstawione).
+  if (ratio < 0.6) return 'shirt'; // bardzo niska szeroka = rozłożona koszula z rękawami
   return 'tshirt';
 }
 

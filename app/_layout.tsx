@@ -24,6 +24,7 @@ export default function RootLayout() {
       >
         <Stack.Screen name="index" />
         <Stack.Screen name="camera" />
+        <Stack.Screen name="crop" />
         <Stack.Screen name="processing" />
         <Stack.Screen name="result" />
         <Stack.Screen name="history" />

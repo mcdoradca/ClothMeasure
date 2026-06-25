@@ -4,7 +4,7 @@
 
 import { create } from 'zustand';
 import { HistoryEntry, ProcessingResult } from '../types';
-import * as FileSystem from 'expo-file-system';
+import * as FileSystem from 'expo-file-system/legacy';
 
 interface MeasurementStore {
   // Aktualny wynik przetwarzania
