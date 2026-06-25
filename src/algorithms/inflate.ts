@@ -149,15 +149,29 @@ function inflateBlock(
   reader: BitReader,
   litTable: HuffmanTable,
   distTable: HuffmanTable,
-  output: number[]
-): void {
+  outBuf: Uint8Array,
+  state: { pos: number }
+): Uint8Array {
+  let output = outBuf;
+  let pos = state.pos;
+
+  function ensureCapacity(needed: number) {
+    if (pos + needed > output.length) {
+      const newBuf = new Uint8Array(output.length * 2 + needed);
+      newBuf.set(output);
+      output = newBuf;
+    }
+  }
+
   while (true) {
+    ensureCapacity(258); // max len is 258
     const sym = decodeSymbol(reader, litTable);
 
     if (sym < 256) {
-      output.push(sym);
+      output[pos++] = sym;
     } else if (sym === 256) {
-      return;
+      state.pos = pos;
+      return output;
     } else {
       const lenIdx = sym - 257;
       if (lenIdx < 0 || lenIdx >= LENGTH_BASE.length) {
@@ -171,9 +185,9 @@ function inflateBlock(
       }
       const distance = DIST_BASE[distSym] + reader.readBits(DIST_EXTRA[distSym]);
 
-      const start = output.length - distance;
+      const start = pos - distance;
       for (let i = 0; i < length; i++) {
-        output.push(output[start + i]);
+        output[pos++] = output[start + i];
       }
     }
   }
@@ -222,7 +236,10 @@ function decodeDynamicTables(reader: BitReader): { litTable: HuffmanTable; distT
 
 export function inflate(compressedData: Uint8Array): Uint8Array {
   const reader = new BitReader(compressedData);
-  const output: number[] = [];
+  
+  // Zakładamy na start sensowny rozmiar (np. 1MB) i będziemy rozszerzać wykładniczo
+  let output = new Uint8Array(1024 * 1024);
+  const state = { pos: 0 };
 
   let bfinal = 0;
 
@@ -235,20 +252,27 @@ export function inflate(compressedData: Uint8Array): Uint8Array {
       reader.align();
       const len = reader.readUint16LE();
       reader.readUint16LE(); // nlen — complement, pomijamy
+      
+      if (state.pos + len > output.length) {
+        const newBuf = new Uint8Array(output.length * 2 + len);
+        newBuf.set(output);
+        output = newBuf;
+      }
+      
       for (let i = 0; i < len; i++) {
-        output.push(reader.readByte());
+        output[state.pos++] = reader.readByte();
       }
     } else if (btype === 1) {
-      inflateBlock(reader, FIXED_LIT_TABLE, FIXED_DIST_TABLE, output);
+      output = inflateBlock(reader, FIXED_LIT_TABLE, FIXED_DIST_TABLE, output, state);
     } else if (btype === 2) {
       const { litTable, distTable } = decodeDynamicTables(reader);
-      inflateBlock(reader, litTable, distTable, output);
+      output = inflateBlock(reader, litTable, distTable, output, state);
     } else {
       throw new Error('inflate: reserved block type 3');
     }
   }
 
-  return new Uint8Array(output);
+  return output.slice(0, state.pos);
 }
 
 /**

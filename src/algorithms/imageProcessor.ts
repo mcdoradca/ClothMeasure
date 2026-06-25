@@ -43,9 +43,9 @@ export async function processClothingImage(
     onProgress?.('Odczyt pikseli…', 20);
 
     // 2. Pobierz surowe dane pikseli przez base64 → ArrayBuffer
-    const pixelData = await getImagePixelData(resizeResult.uri, imgWidth, imgHeight);
+    const pixelResult = await getImagePixelData(resizeResult.uri, imgWidth, imgHeight);
 
-    if (!pixelData) {
+    if (!pixelResult) {
       return {
         success: false,
         imageUri,
@@ -58,23 +58,25 @@ export async function processClothingImage(
       };
     }
 
+    const { data: pixelData, width: procWidth, height: procHeight } = pixelResult;
+
     onProgress?.('Szukam markera kalibracyjnego…', 35);
 
     // 3. Detekcja markera ArUco
-    const marker = detectArucoMarker(pixelData, imgWidth, imgHeight);
+    const marker = detectArucoMarker(pixelData, procWidth, procHeight);
     const markerFound = marker !== null;
 
     const measurementContext = markerFound
       ? calculatePixelPerCm(marker!)
-      : estimatePixelPerCmFromImageSize(imgWidth, imgHeight);
+      : estimatePixelPerCmFromImageSize(procWidth, procHeight);
 
     onProgress?.('Wykrywam kontury ubrania…', 55);
 
     // 4. Canny edge detection
-    const edges = cannyEdgeDetection(pixelData, imgWidth, imgHeight, 4);
+    const edges = cannyEdgeDetection(pixelData, procWidth, procHeight, 4);
 
     // 5. Znajdź kontur
-    const contour = findClothingContour(edges, imgWidth, imgHeight);
+    const contour = findClothingContour(edges, procWidth, procHeight);
 
     if (!contour) {
       return {
@@ -96,8 +98,8 @@ export async function processClothingImage(
     const measurements = calculateGarmentMeasurements(
       contour.boundingBox,
       edges,
-      imgWidth,
-      imgHeight,
+      procWidth,
+      procHeight,
       measurementContext
     );
 
@@ -106,8 +108,8 @@ export async function processClothingImage(
     // 7. Rysuj adnotacje na zdjęciu
     const annotatedBase64 = await renderAnnotations(
       resizeResult.uri,
-      imgWidth,
-      imgHeight,
+      procWidth,
+      procHeight,
       measurements,
       marker
     );
@@ -151,7 +153,7 @@ async function getImagePixelData(
   uri: string,
   width: number,
   height: number
-): Promise<Uint8ClampedArray | null> {
+): Promise<{ data: Uint8ClampedArray; width: number; height: number } | null> {
   try {
     // Strategia: konwertuj obraz do formatu, który możemy odczytać pixel po pixelu
     // W React Native bez natywnego modułu musimy użyć innego podejścia:
@@ -183,7 +185,7 @@ async function getImagePixelData(
       workingHeight
     );
 
-    return pixelData;
+    return { data: pixelData, width: workingWidth, height: workingHeight };
   } catch (e) {
     console.error('[getImagePixelData] Błąd:', e);
     return null;

@@ -31,12 +31,18 @@ export default function CropScreen() {
   // Przechowujemy wartość cropBox na początku gestu, żeby gestureState.dy (kumulacyjny)
   // był odliczany od stałej bazy, a nie od ciągle zmieniającej się wartości.
   const gestureStartCropBox = useRef(cropBox);
+  
+  // Ref śledzący zawsze najnowszą wartość stanu, omijający stale closure w PanResponder
+  const latestCropBox = useRef(cropBox);
+  useEffect(() => {
+    latestCropBox.current = cropBox;
+  }, [cropBox]);
 
   const createPanResponder = (handle: 'top' | 'bottom' | 'left' | 'right') => {
     return PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onPanResponderGrant: () => {
-        gestureStartCropBox.current = cropBox;
+        gestureStartCropBox.current = latestCropBox.current;
       },
       onPanResponderMove: (_evt, gestureState) => {
         const start = gestureStartCropBox.current;
