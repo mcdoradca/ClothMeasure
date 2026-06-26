@@ -21,14 +21,14 @@ export interface MeasurementContext {
 
 /**
  * Oblicz skalę px/cm na podstawie wykrytego markera ArUco
- * Marker jest drukowany jako 10x10 cm
+ * Marker (jego czarna krawędź) standardowo w takich drukach ma 5x5 cm, a nie 10x10.
  */
 export function calculatePixelPerCm(marker: ArucoMarker): MeasurementContext {
   // Średnia długość boku markera w px
   const markerSidePx = marker.sidePixels;
 
-  // Marker referencyjny = 10 cm
-  const MARKER_SIZE_CM = 10;
+  // Marker referencyjny = 5 cm (rozwiązuje problem dwukrotnie zawyżonych wymiarów)
+  const MARKER_SIZE_CM = 5;
 
   const pixelPerCm = markerSidePx / MARKER_SIZE_CM;
 
@@ -47,10 +47,10 @@ export function estimatePixelPerCmFromImageSize(
   imageWidth: number,
   imageHeight: number
 ): MeasurementContext {
-  // Heurystyka: przeciętna koszulka dorosłego to ~60cm szerokości
+  // Heurystyka: przeciętna koszulka dorosłego to ~45cm szerokości
   // i zajmuje ~70% kadru
   const estimatedGarmentWidthPx = imageWidth * 0.7;
-  const estimatedGarmentWidthCm = 60;
+  const estimatedGarmentWidthCm = 45;
 
   return {
     pixelPerCm: estimatedGarmentWidthPx / estimatedGarmentWidthCm,
@@ -75,8 +75,8 @@ export function calculateGarmentMeasurements(
   const widthPx = maxX - minX;
   const heightPx = maxY - minY;
 
-  const widthCm = Math.round((widthPx / pixelPerCm) * 10) / 10;
-  const lengthCm = Math.round((heightPx / pixelPerCm) * 10) / 10;
+  const widthCm = Math.round(widthPx / pixelPerCm);
+  const lengthCm = Math.round(heightPx / pixelPerCm);
 
   // Wykryj typ ubrania na podstawie proporcji
   const garmentType = detectGarmentType(widthCm, lengthCm);
@@ -95,7 +95,7 @@ export function calculateGarmentMeasurements(
   const shoulderMeasure = measureWidthAtY(edges, imageWidth, shoulderY);
 
   if (shoulderMeasure) {
-    shoulder = Math.round((shoulderMeasure.widthPx / pixelPerCm) * 10) / 10;
+    shoulder = Math.round(shoulderMeasure.widthPx / pixelPerCm);
     lines.push({
       start: { x: shoulderMeasure.leftX, y: shoulderY },
       end: { x: shoulderMeasure.rightX, y: shoulderY },
@@ -109,7 +109,7 @@ export function calculateGarmentMeasurements(
   const chestY = Math.round(minY + heightPx * 0.30);
   const chestMeasure = measureWidthAtY(edges, imageWidth, chestY);
   if (chestMeasure) {
-    chest = Math.round((chestMeasure.widthPx / pixelPerCm) * 10) / 10;
+    chest = Math.round(chestMeasure.widthPx / pixelPerCm);
     lines.push({
       start: { x: chestMeasure.leftX, y: chestY },
       end: { x: chestMeasure.rightX, y: chestY },
@@ -123,7 +123,7 @@ export function calculateGarmentMeasurements(
   const waistY = Math.round(minY + heightPx * 0.50);
   const waistMeasure = measureWidthAtY(edges, imageWidth, waistY);
   if (waistMeasure) {
-    waist = Math.round((waistMeasure.widthPx / pixelPerCm) * 10) / 10;
+    waist = Math.round(waistMeasure.widthPx / pixelPerCm);
     lines.push({
       start: { x: waistMeasure.leftX, y: waistY },
       end: { x: waistMeasure.rightX, y: waistY },
@@ -138,7 +138,7 @@ export function calculateGarmentMeasurements(
     const hipsY = Math.round(minY + heightPx * 0.70);
     const hipsMeasure = measureWidthAtY(edges, imageWidth, hipsY);
     if (hipsMeasure) {
-      hips = Math.round((hipsMeasure.widthPx / pixelPerCm) * 10) / 10;
+      hips = Math.round(hipsMeasure.widthPx / pixelPerCm);
       lines.push({
         start: { x: hipsMeasure.leftX, y: hipsY },
         end: { x: hipsMeasure.rightX, y: hipsY },
