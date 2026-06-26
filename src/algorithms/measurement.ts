@@ -75,8 +75,8 @@ export function calculateGarmentMeasurements(
   const widthPx = maxX - minX;
   const heightPx = maxY - minY;
 
-  const widthCm = Math.round((widthPx / pixelPerCm) * 10) / 10;
-  const lengthCm = Math.round((heightPx / pixelPerCm) * 10) / 10;
+  const widthCm = Math.round(widthPx / pixelPerCm);
+  const lengthCm = Math.round(heightPx / pixelPerCm);
 
   // Wykryj typ ubrania na podstawie proporcji
   const garmentType = detectGarmentType(widthCm, lengthCm);
@@ -90,12 +90,12 @@ export function calculateGarmentMeasurements(
   let inseam: number | undefined;
   let sleeve: number | undefined;
 
-  // Linia szerokości (górna część)
-  const shoulderY = Math.round(minY + heightPx * 0.15);
+  // Linia szerokości (górna część korpusu, obniżona do 25%, aby ominąć najwyższy punkt rękawów zniekształcający wymiar)
+  const shoulderY = Math.round(minY + heightPx * 0.25);
   const shoulderMeasure = measureWidthAtY(edges, imageWidth, shoulderY);
 
   if (shoulderMeasure) {
-    shoulder = Math.round((shoulderMeasure.widthPx / pixelPerCm) * 10) / 10;
+    shoulder = Math.round(shoulderMeasure.widthPx / pixelPerCm);
     lines.push({
       start: { x: shoulderMeasure.leftX, y: shoulderY },
       end: { x: shoulderMeasure.rightX, y: shoulderY },
@@ -105,11 +105,11 @@ export function calculateGarmentMeasurements(
     });
   }
 
-  // Klatka piersiowa (30% od góry)
-  const chestY = Math.round(minY + heightPx * 0.30);
+  // Linia klatki piersiowej (obniżona do 45% by mierzyć bezpośrednio pod pachami, a nie rozpiętość leżących rękawów!)
+  const chestY = Math.round(minY + heightPx * 0.45);
   const chestMeasure = measureWidthAtY(edges, imageWidth, chestY);
   if (chestMeasure) {
-    chest = Math.round((chestMeasure.widthPx / pixelPerCm) * 10) / 10;
+    chest = Math.round(chestMeasure.widthPx / pixelPerCm);
     lines.push({
       start: { x: chestMeasure.leftX, y: chestY },
       end: { x: chestMeasure.rightX, y: chestY },
@@ -119,11 +119,11 @@ export function calculateGarmentMeasurements(
     });
   }
 
-  // Talia (50% od góry)
-  const waistY = Math.round(minY + heightPx * 0.50);
+  // Talia (obniżona do 65%)
+  const waistY = Math.round(minY + heightPx * 0.65);
   const waistMeasure = measureWidthAtY(edges, imageWidth, waistY);
   if (waistMeasure) {
-    waist = Math.round((waistMeasure.widthPx / pixelPerCm) * 10) / 10;
+    waist = Math.round(waistMeasure.widthPx / pixelPerCm);
     lines.push({
       start: { x: waistMeasure.leftX, y: waistY },
       end: { x: waistMeasure.rightX, y: waistY },
@@ -133,12 +133,12 @@ export function calculateGarmentMeasurements(
     });
   }
 
-  // Biodra (70% od góry) — dla spodni/sukienek
+  // Biodra (dół - 85%) — dla spodni/sukienek
   if (garmentType === 'pants' || garmentType === 'dress' || garmentType === 'skirt') {
-    const hipsY = Math.round(minY + heightPx * 0.70);
+    const hipsY = Math.round(minY + heightPx * 0.85);
     const hipsMeasure = measureWidthAtY(edges, imageWidth, hipsY);
     if (hipsMeasure) {
-      hips = Math.round((hipsMeasure.widthPx / pixelPerCm) * 10) / 10;
+      hips = Math.round(hipsMeasure.widthPx / pixelPerCm);
       lines.push({
         start: { x: hipsMeasure.leftX, y: hipsY },
         end: { x: hipsMeasure.rightX, y: hipsY },
