@@ -50,12 +50,16 @@ export default function CameraScreen() {
       });
 
       if (photo?.uri) {
-        // Znormalizowanie EXIF, by fizyczne piksele pokrywały się z osią XY bez rotacji. Zapobiega "randomowym" cięciom.
+        // EXIF FIX: pusta tablica [] nie wypala rotacji w SDK 54.
+        // Resize z docelową szerokością WYMUSZA fizyczne obrócenie pikseli.
+        const targetW = photo.width || photo.height || 1200;
         const normalized = await ImageManipulator.manipulateAsync(
           photo.uri,
-          [],
+          [{ resize: { width: targetW } }],
           { format: ImageManipulator.SaveFormat.JPEG, compress: 0.95 }
         );
+        console.log('[Camera] Photo:', photo.width, 'x', photo.height,
+          '→ Normalized:', normalized.width, 'x', normalized.height);
         setCapturedImageUri(normalized.uri);
         router.push('/crop');
       }
@@ -76,11 +80,15 @@ export default function CameraScreen() {
       });
 
       if (!result.canceled && result.assets[0]) {
+        const asset = result.assets[0];
+        const targetW = asset.width || asset.height || 1200;
         const normalized = await ImageManipulator.manipulateAsync(
-          result.assets[0].uri,
-          [],
+          asset.uri,
+          [{ resize: { width: targetW } }],
           { format: ImageManipulator.SaveFormat.JPEG, compress: 0.95 }
         );
+        console.log('[Camera] Gallery:', asset.width, 'x', asset.height,
+          '→ Normalized:', normalized.width, 'x', normalized.height);
         setCapturedImageUri(normalized.uri);
         router.push('/crop');
       }

@@ -23,8 +23,29 @@ export default function CropScreen() {
       router.replace('/');
       return;
     }
-    Image.getSize(capturedImageUri, (width, height) => {
-      setActualImageSize({ width, height });
+    // Pobierz RZECZYWISTE wymiary pikselowe z ImageManipulator (ta sama instancja co crop).
+    // Image.getSize potrafi zwracać wymiary PO rotacji EXIF, podczas gdy crop operuje na surowym buforze.
+    ImageManipulator.manipulateAsync(
+      capturedImageUri,
+      [],
+      { format: ImageManipulator.SaveFormat.JPEG, compress: 1 }
+    ).then(info => {
+      console.log('[Crop] ImageManipulator dims:', info.width, 'x', info.height);
+      setActualImageSize({ width: info.width, height: info.height });
+
+      // Cross-check z Image.getSize
+      Image.getSize(capturedImageUri, (w, h) => {
+        console.log('[Crop] Image.getSize dims:', w, 'x', h);
+        if (w !== info.width || h !== info.height) {
+          console.warn('[Crop] ⚠️ WYMIARY SIĘ RÓŻNIĄ! EXIF bug.');
+        }
+      });
+    }).catch(() => {
+      // Fallback
+      Image.getSize(capturedImageUri, (w, h) => {
+        console.log('[Crop] Fallback Image.getSize:', w, 'x', h);
+        setActualImageSize({ width: w, height: h });
+      });
     });
   }, [capturedImageUri]);
 
@@ -147,6 +168,8 @@ export default function CropScreen() {
         { format: ImageManipulator.SaveFormat.JPEG, compress: 0.9 }
       );
 
+      console.log('[Crop] Wynik:', cropped.width, 'x', cropped.height,
+        '(oczekiwano:', width, 'x', height, ')');
       setCapturedImageUri(cropped.uri);
       router.replace('/processing');
     } catch (e) {
