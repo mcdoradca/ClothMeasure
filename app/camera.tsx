@@ -14,6 +14,7 @@ import { CameraView, useCameraPermissions, CameraType } from 'expo-camera';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import * as ImageManipulator from 'expo-image-manipulator';
 import { useMeasurementStore } from '../src/stores/measurementStore';
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
@@ -49,7 +50,13 @@ export default function CameraScreen() {
       });
 
       if (photo?.uri) {
-        setCapturedImageUri(photo.uri);
+        // Znormalizowanie EXIF, by fizyczne piksele pokrywały się z osią XY bez rotacji. Zapobiega "randomowym" cięciom.
+        const normalized = await ImageManipulator.manipulateAsync(
+          photo.uri,
+          [],
+          { format: ImageManipulator.SaveFormat.JPEG, compress: 0.95 }
+        );
+        setCapturedImageUri(normalized.uri);
         router.push('/crop');
       }
     } catch (e) {
@@ -69,7 +76,12 @@ export default function CameraScreen() {
       });
 
       if (!result.canceled && result.assets[0]) {
-        setCapturedImageUri(result.assets[0].uri);
+        const normalized = await ImageManipulator.manipulateAsync(
+          result.assets[0].uri,
+          [],
+          { format: ImageManipulator.SaveFormat.JPEG, compress: 0.95 }
+        );
+        setCapturedImageUri(normalized.uri);
         router.push('/crop');
       }
     } catch (e) {

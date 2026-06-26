@@ -40,21 +40,43 @@ function globalThreshold(
 ): Uint8Array {
   const binary = new Uint8Array(width * height);
   
-  // Znajdź przybliżoną średnią jasność
-  let sum = 0;
-  // Próbkowanie co 4 piksele dla szybkości
-  for (let i = 0; i < gray.length; i += 4) {
-    sum += gray[i];
+  // Otsu's method: oblicz histogram i znajdź optymalny próg binaryzacji
+  const histogram = new Uint32Array(256);
+  for (let i = 0; i < gray.length; i++) {
+    histogram[gray[i]]++;
   }
-  const mean = sum / (gray.length / 4);
   
-  // Próg to znacznie ciemniejsze niż średnia (np. o 40)
-  // albo sztywny próg 100 dla ciemnych elementów na jasnym papierze
-  const thresholdValue = Math.min(mean - 30, 100);
+  const total = gray.length;
+  let sumAll = 0;
+  for (let i = 0; i < 256; i++) sumAll += i * histogram[i];
+  
+  let sumB = 0;
+  let wB = 0;
+  let maxVariance = 0;
+  let bestThreshold = 128;
+  
+  for (let t = 0; t < 256; t++) {
+    wB += histogram[t];
+    if (wB === 0) continue;
+    const wF = total - wB;
+    if (wF === 0) break;
+    
+    sumB += t * histogram[t];
+    const meanB = sumB / wB;
+    const meanF = (sumAll - sumB) / wF;
+    const variance = wB * wF * (meanB - meanF) * (meanB - meanF);
+    
+    if (variance > maxVariance) {
+      maxVariance = variance;
+      bestThreshold = t;
+    }
+  }
 
   for (let i = 0; i < gray.length; i++) {
-    binary[i] = gray[i] < thresholdValue ? 1 : 0;
+    binary[i] = gray[i] < bestThreshold ? 1 : 0;
   }
+  
+  console.log('[ArUco] Otsu threshold:', bestThreshold, '| image:', width, 'x', height);
   return binary;
 }
 
@@ -125,9 +147,9 @@ function isSquarish(
 ): boolean {
   const w = maxX - minX;
   const h = maxY - minY;
-  if (w < 20 || h < 20) return false;
+  if (w < 15 || h < 15) return false;
   const ratio = Math.min(w, h) / Math.max(w, h);
-  return ratio > 0.7; // przynajmniej 70% zbliżone do kwadratu
+  return ratio > 0.65; // przynajmniej 65% zbliżone do kwadratu
 }
 
 function sampleMarkerBits(
@@ -188,11 +210,12 @@ export function detectArucoMarker(
     // 2. Grayscale
     const gray = toGrayscale(processData, processWidth, processHeight);
 
-    // 3. Global threshold (zamiast powolnego i niszczącego kształty adaptive)
+    // 3. Global threshold (Otsu)
     const binary = globalThreshold(gray, processWidth, processHeight);
 
     // 4. Znajdź komponenty
     const components = findConnectedComponents(binary, processWidth, processHeight);
+    console.log('[ArUco] Znaleziono komponentów:', components.length);
 
     // 5. Filtruj kwadratowe regiony pasujące wielkością markera
     const markerCandidates: ArucoMarker[] = [];
@@ -205,9 +228,14 @@ export function detectArucoMarker(
       const w = maxX - minX;
       const h = maxY - minY;
 
-      // Marker powinien zajmować minimum 8% i max 60% szerokości obrazu
-      // 8% na 600px to 48px, idealnie wyklucza szum (stare 2% to było 12px!)
-      if (w < processWidth * 0.08 || w > processWidth * 0.6) continue;
+      // Marker powinien zajmować minimum 3% i max 60% szerokości obrazu
+      // 3% na 600px to 18px — wystarczająco duże żeby nie być szumem
+      if (w < processWidth * 0.03 || w > processWidth * 0.6) continue;
+
+      // Sprawdź wypełnienie — marker ArUco to gęsty blok, nie puste obrys
+      const bbox_area = w * h;
+      const fill_ratio = comp.length / bbox_area;
+      if (fill_ratio < 0.4) continue; // za rzadki, raczej obrys lub szum
 
       // Sprawdź czy obszar wewnątrz ma wzór czarnej ramki (border)
       const borderOk = checkBlackBorder(binary, processWidth, minX, minY, maxX, maxY);
@@ -223,17 +251,24 @@ export function detectArucoMarker(
 
       const sidePixels = Math.round(((w + h) / 2) * scale);
 
+      console.log('[ArUco] Kandydat:', w, 'x', h, 'px, fill:', (fill_ratio * 100).toFixed(0) + '%',
+        '| pos:', minX, minY, '| sidePixels:', sidePixels);
+
       markerCandidates.push({
-        id: 1, // domyślne ID, w rzeczywistej impl. byłby odczyt bitów
+        id: 1,
         corners,
         sidePixels,
       });
     }
 
-    if (markerCandidates.length === 0) return null;
+    if (markerCandidates.length === 0) {
+      console.log('[ArUco] Brak kandydatów po filtracji');
+      return null;
+    }
 
     // Zwróć największy wykryty marker (najbardziej wiarygodny)
     markerCandidates.sort((a, b) => b.sidePixels - a.sidePixels);
+    console.log('[ArUco] Wybrany marker: sidePixels =', markerCandidates[0].sidePixels);
     return markerCandidates[0];
 
   } catch (e) {

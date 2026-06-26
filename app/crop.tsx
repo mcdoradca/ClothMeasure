@@ -79,45 +79,67 @@ export default function CropScreen() {
     setIsProcessing(true);
 
     try {
-      // Image w React Native z resizeMode="contain" dodaje puste paski (letterbox/pillarbox).
-      // Musimy wyliczyć RZECZYWISTY rozmiar i pozycję wyświetlanego zdjęcia na ekranie:
-      const viewAspect = imageLayout.width / imageLayout.height;
-      const imgAspect = actualImageSize.width / actualImageSize.height;
+      // ---- Krok 1: Wylicz gdzie fizycznie renderuje się zdjęcie wewnątrz komponentu Image ----
+      // Komponent Image ma wymiary imageLayout (== cały imageWrapper).
+      // Z resizeMode="contain" zdjęcie jest wycentrowane i może mieć puste pasy.
+      const viewW = imageLayout.width;
+      const viewH = imageLayout.height;
+      const imgW = actualImageSize.width;
+      const imgH = actualImageSize.height;
 
-      let visualWidth = imageLayout.width;
-      let visualHeight = imageLayout.height;
-      let offsetX = 0;
-      let offsetY = 0;
+      const viewAspect = viewW / viewH;
+      const imgAspect = imgW / imgH;
+
+      let renderedW: number, renderedH: number, padLeft: number, padTop: number;
 
       if (imgAspect > viewAspect) {
-        // Zdjęcie ograniczone szerokością ekranu (letterbox na górze i dole)
-        visualHeight = imageLayout.width / imgAspect;
-        offsetY = (imageLayout.height - visualHeight) / 2;
+        // Zdjęcie szersze niż widok → dopasowane do szerokości, pasy na górze/dole
+        renderedW = viewW;
+        renderedH = viewW / imgAspect;
+        padLeft = 0;
+        padTop = (viewH - renderedH) / 2;
       } else {
-        // Zdjęcie ograniczone wysokością ekranu (pillarbox po bokach)
-        visualWidth = imageLayout.height * imgAspect;
-        offsetX = (imageLayout.width - visualWidth) / 2;
+        // Zdjęcie wyższe niż widok → dopasowane do wysokości, pasy po bokach
+        renderedH = viewH;
+        renderedW = viewH * imgAspect;
+        padLeft = (viewW - renderedW) / 2;
+        padTop = 0;
       }
 
-      // Skala z wyświetlanego (rzeczywistego) obrazka na wymiary surowego pliku
-      const scale = actualImageSize.width / visualWidth;
+      // ---- Krok 2: Przelicz cropBox (insety od krawędzi WIDOKU) na prostokąt wewnątrz WIDOKU ----
+      const cropViewLeft = cropBox.left;
+      const cropViewTop = cropBox.top;
+      const cropViewRight = viewW - cropBox.right;
+      const cropViewBottom = viewH - cropBox.bottom;
 
-      // Odejmujemy letterboxy, żeby uzyskać pozycję w obrębie wyświetlanego zdjęcia
-      const realLeft = Math.max(0, cropBox.left - offsetX);
-      const realTop = Math.max(0, cropBox.top - offsetY);
-      const realRight = Math.max(0, cropBox.right - offsetX);
-      const realBottom = Math.max(0, cropBox.bottom - offsetY);
+      // ---- Krok 3: Przelicz na współrzędne wewnątrz renderowanego zdjęcia ----
+      // Odejmij padding (pozycję lewego-górnego rogu zdjęcia w widoku)
+      const imgLocalLeft = Math.max(0, cropViewLeft - padLeft);
+      const imgLocalTop = Math.max(0, cropViewTop - padTop);
+      const imgLocalRight = Math.min(renderedW, cropViewRight - padLeft);
+      const imgLocalBottom = Math.min(renderedH, cropViewBottom - padTop);
 
-      let originX = Math.floor(realLeft * scale);
-      let originY = Math.floor(realTop * scale);
-      let width = Math.floor((visualWidth - realLeft - realRight) * scale);
-      let height = Math.floor((visualHeight - realTop - realBottom) * scale);
+      // ---- Krok 4: Skaluj do wymiarów surowego pliku ----
+      const scaleX = imgW / renderedW;
+      const scaleY = imgH / renderedH;
 
-      // Zabezpieczenie przed wyjściem poza granice surowego pliku
-      originX = Math.max(0, Math.min(originX, actualImageSize.width - 1));
-      originY = Math.max(0, Math.min(originY, actualImageSize.height - 1));
-      width = Math.max(1, Math.min(width, actualImageSize.width - originX));
-      height = Math.max(1, Math.min(height, actualImageSize.height - originY));
+      let originX = Math.round(imgLocalLeft * scaleX);
+      let originY = Math.round(imgLocalTop * scaleY);
+      let width = Math.round((imgLocalRight - imgLocalLeft) * scaleX);
+      let height = Math.round((imgLocalBottom - imgLocalTop) * scaleY);
+
+      // Clamp do granic pliku
+      originX = Math.max(0, Math.min(originX, imgW - 1));
+      originY = Math.max(0, Math.min(originY, imgH - 1));
+      width = Math.max(1, Math.min(width, imgW - originX));
+      height = Math.max(1, Math.min(height, imgH - originY));
+
+      console.log('[Crop] view:', viewW, 'x', viewH,
+        '| rendered:', renderedW.toFixed(0), 'x', renderedH.toFixed(0),
+        '| pad:', padLeft.toFixed(0), padTop.toFixed(0),
+        '| cropBox:', JSON.stringify(cropBox),
+        '| origin:', originX, originY, '| size:', width, 'x', height,
+        '| file:', imgW, 'x', imgH);
 
       const cropped = await ImageManipulator.manipulateAsync(
         capturedImageUri,
