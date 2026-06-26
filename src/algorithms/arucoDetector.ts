@@ -239,15 +239,18 @@ export function detectArucoMarker(
         continue;
       }
 
-      // Sprawdź wypełnienie — marker ArUco to gęsty blok, nie puste obrys
+      // Sprawdź wypełnienie — marker ArUco ma w środku białe piksele i nie jest litym blokiem.
+      // Dodatkowo obrót z perspektywy zwiększa pole bounding boxa (białe trójkąty w rogach).
+      // Klasyczny marker ma fill ratio w granicach 0.10 - 0.25
       const bbox_area = w * h;
       const fill_ratio = comp.length / bbox_area;
-      if (fill_ratio < 0.4) {
+      if (fill_ratio < 0.08) {
         if (isBigEnoughToLog) console.log(`[ArUco Reject] W: ${w}, H: ${h} -> Fill ratio too low: ${fill_ratio.toFixed(2)}`);
-        continue; // za rzadki, raczej obrys lub szum
+        continue; // tylko ekstremalnie cienkie nitki odrzucamy
       }
 
       // Sprawdź czy obszar wewnątrz ma wzór czarnej ramki (border)
+      // Próg znacznie obniżony, bo bbox przy perspektywie pokrywa dużo białego tła
       const borderOk = checkBlackBorder(binary, processWidth, minX, minY, maxX, maxY);
       if (!borderOk) {
         if (isBigEnoughToLog) console.log(`[ArUco Reject] W: ${w}, H: ${h} -> Border check failed`);
@@ -325,7 +328,7 @@ function checkBlackBorder(
     }
   }
 
-  return totalSamples > 0 && darkCount / totalSamples > 0.4;
+  return totalSamples > 0 && darkCount / totalSamples > 0.1;
 }
 
 function downsampleRGBA(
