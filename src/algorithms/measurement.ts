@@ -67,7 +67,8 @@ export function calculateGarmentMeasurements(
   edges: Uint8Array,
   imageWidth: number,
   imageHeight: number,
-  context: MeasurementContext
+  context: MeasurementContext,
+  markerExcludeBox?: { minX: number; minY: number; maxX: number; maxY: number }
 ): GarmentMeasurements {
   const { pixelPerCm } = context;
   const { minX, minY, maxX, maxY } = boundingBox;
@@ -92,7 +93,7 @@ export function calculateGarmentMeasurements(
 
   // Linia szerokości (górna część korpusu, obniżona do 25%, aby ominąć najwyższy punkt rękawów zniekształcający wymiar)
   const shoulderY = Math.round(minY + heightPx * 0.25);
-  const shoulderMeasure = measureWidthAtY(edges, imageWidth, shoulderY);
+  const shoulderMeasure = measureWidthAtY(edges, imageWidth, shoulderY, markerExcludeBox);
 
   if (shoulderMeasure) {
     shoulder = Math.round(shoulderMeasure.widthPx / pixelPerCm);
@@ -107,7 +108,7 @@ export function calculateGarmentMeasurements(
 
   // Linia klatki piersiowej (obniżona do 45% by mierzyć bezpośrednio pod pachami, a nie rozpiętość leżących rękawów!)
   const chestY = Math.round(minY + heightPx * 0.45);
-  const chestMeasure = measureWidthAtY(edges, imageWidth, chestY);
+  const chestMeasure = measureWidthAtY(edges, imageWidth, chestY, markerExcludeBox);
   if (chestMeasure) {
     chest = Math.round(chestMeasure.widthPx / pixelPerCm);
     lines.push({
@@ -121,7 +122,7 @@ export function calculateGarmentMeasurements(
 
   // Talia (obniżona do 65%)
   const waistY = Math.round(minY + heightPx * 0.65);
-  const waistMeasure = measureWidthAtY(edges, imageWidth, waistY);
+  const waistMeasure = measureWidthAtY(edges, imageWidth, waistY, markerExcludeBox);
   if (waistMeasure) {
     waist = Math.round(waistMeasure.widthPx / pixelPerCm);
     lines.push({
@@ -136,7 +137,7 @@ export function calculateGarmentMeasurements(
   // Biodra (dół - 85%) — dla spodni/sukienek
   if (garmentType === 'pants' || garmentType === 'dress' || garmentType === 'skirt') {
     const hipsY = Math.round(minY + heightPx * 0.85);
-    const hipsMeasure = measureWidthAtY(edges, imageWidth, hipsY);
+    const hipsMeasure = measureWidthAtY(edges, imageWidth, hipsY, markerExcludeBox);
     if (hipsMeasure) {
       hips = Math.round(hipsMeasure.widthPx / pixelPerCm);
       lines.push({

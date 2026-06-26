@@ -92,15 +92,31 @@ export async function processClothingImage(
       };
     }
 
+    // Zbuduj pudełko wykluczające obszar fizycznej kartki A4 z detekcji krawędzi ubrania
+    let markerExcludeBox;
+    if (marker) {
+      const cx = (marker.corners[0].x + marker.corners[2].x) / 2;
+      const cy = (marker.corners[0].y + marker.corners[2].y) / 2;
+      // Zakładamy, że kartka (np. A4) może być do 3x szersza niż marker z każdej strony
+      const exclusionRadius = marker.sidePixels * 3;
+      markerExcludeBox = {
+        minX: cx - exclusionRadius,
+        maxX: cx + exclusionRadius,
+        minY: cy - exclusionRadius,
+        maxY: cy + exclusionRadius,
+      };
+    }
+
     onProgress?.('Obliczam wymiary…', 70);
 
-    // 6. Oblicz wymiary
+    // 6. Oblicz wymiary (przekazując markerExcludeBox by zablokować błędy krawędzi z kartki)
     const measurements = calculateGarmentMeasurements(
       contour.boundingBox,
       edges,
       procWidth,
       procHeight,
-      measurementContext
+      measurementContext,
+      markerExcludeBox
     );
 
     onProgress?.('Rysuję adnotacje…', 85);

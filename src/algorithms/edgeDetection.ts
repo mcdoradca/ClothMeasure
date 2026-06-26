@@ -240,26 +240,75 @@ export function findClothingContour(
   };
 }
 
-/**
- * Oblicz szerokość ubrania w konkretnym punkcie Y (przekrój poziomy).
- * Używane do estymacji bioder, klatki, talii.
- */
 export function measureWidthAtY(
   edges: Uint8Array,
   width: number,
-  targetY: number
+  targetY: number,
+  markerExcludeBox?: { minX: number; minY: number; maxX: number; maxY: number }
 ): { leftX: number; rightX: number; widthPx: number } | null {
-  let leftX = -1;
-  let rightX = -1;
+  const leftCandidates: number[] = [];
+  const rightCandidates: number[] = [];
 
-  for (let x = 0; x < width; x++) {
-    if (edges[targetY * width + x] === 255) {
-      if (leftX === -1) leftX = x;
-      rightX = x;
+  // Pasek badania: 5% szerokości obrazu jako pas w dół/górę by zapewnić ciągłość
+  const bandHeight = Math.max(10, Math.floor(width * 0.05));
+  const startY = Math.max(0, Math.floor(targetY - bandHeight / 2));
+  const endY = Math.min(edges.length / width - 1, Math.floor(targetY + bandHeight / 2));
+
+  for (let y = startY; y <= endY; y++) {
+    let rowLeft = -1;
+    let rowRight = -1;
+
+    for (let x = 0; x < width; x++) {
+      // Pomiń obszar w którym fizycznie leży marker z kartką A4 
+      // (zbudujemy bezpieczny bufor zrzucający kartkę przy wywołaniu)
+      if (
+        markerExcludeBox &&
+        x >= markerExcludeBox.minX && x <= markerExcludeBox.maxX &&
+        y >= markerExcludeBox.minY && y <= markerExcludeBox.maxY
+      ) {
+        continue;
+      }
+
+      if (edges[y * width + x] === 255) {
+        if (rowLeft === -1) rowLeft = x;
+        rowRight = x;
+      }
+    }
+
+    // Dodaj jako kandydatów tylko sensowne rozmiarowo wpadki
+    if (rowLeft !== -1 && rowRight !== -1 && rowRight > rowLeft) {
+      leftCandidates.push(rowLeft);
+      rightCandidates.push(rowRight);
     }
   }
 
-  if (leftX === -1 || rightX === leftX) return null;
+  if (leftCandidates.length < bandHeight * 0.2) return null; // Zbyt mało próbek (przypadkowy śmieć)
 
-  return { leftX, rightX, widthPx: rightX - leftX };
+  // Metoda klastrowania gęstości - szukamy najsilniejszego nagromadzenia krawędzi x
+  const findDensestCluster = (arr: number[], searchRadius: number) => {
+    let bestPoint = arr[0];
+    let maxClusterSize = 0;
+
+    for (const val of arr) {
+      let clusterSize = 0;
+      for (const other of arr) {
+        if (Math.abs(val - other) <= searchRadius) clusterSize++;
+      }
+      if (clusterSize > maxClusterSize) {
+        maxClusterSize = clusterSize;
+        bestPoint = val;
+      }
+    }
+    return bestPoint;
+  };
+
+  // Tolerancja 5% szerokości obrazu w grupowaniu punktów w linię ciągłą
+  const clusterRadius = width * 0.05; 
+
+  const finalLeftX = findDensestCluster(leftCandidates, clusterRadius);
+  const finalRightX = findDensestCluster(rightCandidates, clusterRadius);
+
+  if (finalLeftX >= finalRightX) return null;
+
+  return { leftX: finalLeftX, rightX: finalRightX, widthPx: finalRightX - finalLeftX };
 }
