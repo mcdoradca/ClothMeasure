@@ -222,24 +222,37 @@ export function detectArucoMarker(
 
     for (const comp of components) {
       const { minX, minY, maxX, maxY } = getBoundingBox(comp);
-
-      if (!isSquarish(minX, minY, maxX, maxY)) continue;
-
       const w = maxX - minX;
       const h = maxY - minY;
 
+      // Zaloguj tylko większe komponenty (żeby nie zaspamować logów śmieciami)
+      const isBigEnoughToLog = w > processWidth * 0.05;
+
+      if (!isSquarish(minX, minY, maxX, maxY)) {
+        if (isBigEnoughToLog) console.log(`[ArUco Reject] W: ${w}, H: ${h} -> Not squarish`);
+        continue;
+      }
+
       // Marker powinien zajmować minimum 3% i max 60% szerokości obrazu
-      // 3% na 600px to 18px — wystarczająco duże żeby nie być szumem
-      if (w < processWidth * 0.03 || w > processWidth * 0.6) continue;
+      if (w < processWidth * 0.03 || w > processWidth * 0.6) {
+        if (isBigEnoughToLog) console.log(`[ArUco Reject] W: ${w} -> Out of size bounds (3%-60%)`);
+        continue;
+      }
 
       // Sprawdź wypełnienie — marker ArUco to gęsty blok, nie puste obrys
       const bbox_area = w * h;
       const fill_ratio = comp.length / bbox_area;
-      if (fill_ratio < 0.4) continue; // za rzadki, raczej obrys lub szum
+      if (fill_ratio < 0.4) {
+        if (isBigEnoughToLog) console.log(`[ArUco Reject] W: ${w}, H: ${h} -> Fill ratio too low: ${fill_ratio.toFixed(2)}`);
+        continue; // za rzadki, raczej obrys lub szum
+      }
 
       // Sprawdź czy obszar wewnątrz ma wzór czarnej ramki (border)
       const borderOk = checkBlackBorder(binary, processWidth, minX, minY, maxX, maxY);
-      if (!borderOk) continue;
+      if (!borderOk) {
+        if (isBigEnoughToLog) console.log(`[ArUco Reject] W: ${w}, H: ${h} -> Border check failed`);
+        continue;
+      }
 
       // Oblicz narożniki w oryginalnej skali
       const corners: [Point, Point, Point, Point] = [

@@ -163,7 +163,8 @@ async function getImagePixelData(
     // a następnie odczytaj jako base64 PNG i dekoduj ręcznie
 
     // Zmień rozmiar do wersji roboczej (mniejszy dla wydajności)
-    const workingWidth = Math.min(width, 600);
+    // UWAGA: Zwiększono limit z 600 do 1200 px dla zachowania geometrii krawędzi markera ArUco.
+    const workingWidth = Math.min(width, 1200);
     const workingHeight = Math.round(height * (workingWidth / width));
 
     const pngResult = await ImageManipulator.manipulateAsync(
