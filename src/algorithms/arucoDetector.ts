@@ -327,7 +327,7 @@ export function detectArucoMarker(
 
       // Sprawdź czy obszar wewnątrz ma wzór czarnej ramki (border)
       // Próg znacznie obniżony, bo bbox przy perspektywie pokrywa dużo białego tła
-      const borderOk = checkBlackBorder(binary, processWidth, minX, minY, maxX, maxY);
+      const borderOk = checkSolidBorder(binary, processWidth, minX, minY, maxX, maxY);
       if (!borderOk) {
         if (isBigEnoughToLog) console.log(`[ArUco Reject] BorderGuard W: ${w}, H: ${h} -> rejected`);
         continue;
@@ -370,10 +370,24 @@ export function detectArucoMarker(
       return null;
     }
 
-    // Zwróć największy wykryty marker (najbardziej wiarygodny)
-    markerCandidates.sort((a, b) => b.sidePixels - a.sidePixels);
-    SentinelLogger.success('ArUco', 'detectMarker', { sidePixels: markerCandidates[0].sidePixels });
-    return markerCandidates[0];
+    // Wybierz kandydata z MINIMALNYM sidePixels który przeszedł wszystkie filtry.
+    // Kołdra generuje duże false positive — prawdziwy marker jest mniejszy.
+    // Filtrujemy kandydatów którzy mają sidePixels > 30px (eliminuje drobny szum)
+    // i sortujemy rosnąco — najmniejszy który przeszedł filtry to najprawdopodobniej marker.
+    const validCandidates = markerCandidates.filter(c => c.sidePixels > 30);
+    
+    if (validCandidates.length === 0) {
+      SentinelLogger.error('ArUco', 'detectMarker', 'Brak kandydatów > 30px');
+      return null;
+    }
+
+    // Sortuj rosnąco — prawdziwy ArUco jest zwykle mniejszy niż wzory tła
+    validCandidates.sort((a, b) => a.sidePixels - b.sidePixels);
+    SentinelLogger.success('ArUco', 'detectMarker', { 
+      sidePixels: validCandidates[0].sidePixels,
+      totalCandidates: validCandidates.length 
+    });
+    return validCandidates[0];
 
   } catch (e) {
     SentinelLogger.error('ArUco', 'detectMarker', e);
@@ -381,7 +395,7 @@ export function detectArucoMarker(
   }
 }
 
-function checkBlackBorder(
+function checkSolidBorder(
   binary: Uint8Array,
   width: number,
   minX: number, minY: number,
@@ -389,34 +403,57 @@ function checkBlackBorder(
 ): boolean {
   const w = maxX - minX;
   const h = maxY - minY;
-  const sampleStep = Math.max(1, Math.floor(Math.min(w, h) / 12));
+  const sampleStep = Math.max(1, Math.floor(Math.min(w, h) / 16));
 
   let darkCount = 0;
   let totalSamples = 0;
 
-  // Próbkuj krawędź zewnętrzną (binary === 1 to piksele ciemne)
+  // Próbkuj ZEWNĘTRZNY pas (~1/6 szerokości) — to jest czarna ramka ArUco
+  const borderThickness = Math.max(2, Math.floor(Math.min(w, h) / 6));
+
+  // Górna krawędź (pas borderThickness w dół)
   for (let x = minX; x <= maxX; x += sampleStep) {
-    if (x >= 0 && x < width && minY >= 0) {
-      if (binary[minY * width + x] === 1) darkCount++;
-      totalSamples++;
-    }
-    if (x >= 0 && x < width && maxY >= 0 && maxY < binary.length / width) {
-      if (binary[maxY * width + x] === 1) darkCount++;
-      totalSamples++;
+    for (let by = 0; by < borderThickness; by++) {
+      const y = minY + by;
+      if (x >= 0 && x < width && y >= 0) {
+        if (binary[y * width + x] === 1) darkCount++;
+        totalSamples++;
+      }
     }
   }
-  for (let y = minY; y <= maxY; y += sampleStep) {
-    if (minX >= 0 && minX < width && y >= 0 && y < binary.length / width) {
-      if (binary[y * width + minX] === 1) darkCount++;
-      totalSamples++;
+  // Dolna krawędź
+  for (let x = minX; x <= maxX; x += sampleStep) {
+    for (let by = 0; by < borderThickness; by++) {
+      const y = maxY - by;
+      if (x >= 0 && x < width && y >= 0 && y < binary.length / width) {
+        if (binary[y * width + x] === 1) darkCount++;
+        totalSamples++;
+      }
     }
-    if (maxX >= 0 && maxX < width && y >= 0 && y < binary.length / width) {
-      if (binary[y * width + maxX] === 1) darkCount++;
-      totalSamples++;
+  }
+  // Lewa krawędź
+  for (let y = minY; y <= maxY; y += sampleStep) {
+    for (let bx = 0; bx < borderThickness; bx++) {
+      const x = minX + bx;
+      if (x >= 0 && x < width && y >= 0 && y < binary.length / width) {
+        if (binary[y * width + x] === 1) darkCount++;
+        totalSamples++;
+      }
+    }
+  }
+  // Prawa krawędź
+  for (let y = minY; y <= maxY; y += sampleStep) {
+    for (let bx = 0; bx < borderThickness; bx++) {
+      const x = maxX - bx;
+      if (x >= 0 && x < width && y >= 0 && y < binary.length / width) {
+        if (binary[y * width + x] === 1) darkCount++;
+        totalSamples++;
+      }
     }
   }
 
-  return totalSamples > 0 && darkCount / totalSamples > 0.1;
+  const ratio = totalSamples > 0 ? darkCount / totalSamples : 0;
+  return ratio > 0.70; // ArUco ma >70% czarnej ramki, kołdra nie
 }
 
 function checkInnerVariance(

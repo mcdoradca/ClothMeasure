@@ -7,7 +7,6 @@ import {
   ScrollView,
   TouchableOpacity,
   Dimensions,
-  Animated,
   Share,
   Platform,
   PanResponder,
@@ -15,35 +14,75 @@ import {
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import Svg, { Line } from 'react-native-svg';
+import Svg, { Line, Circle, Text as SvgText, Image as SvgImage, Rect, G } from 'react-native-svg';
 import * as Sharing from 'expo-sharing';
+import * as FileSystem from 'expo-file-system/legacy';
 import { useMeasurementStore } from '../src/stores/measurementStore';
 import { calculateDistanceCm } from '../src/algorithms/measurement';
 import { applyHomography } from '../src/algorithms/perspective';
 import { SentinelLogger } from '../src/utils/logger';
 
 const { width: SCREEN_W } = Dimensions.get('window');
-const IMAGE_HEIGHT = SCREEN_W * 1.33; // Współczynnik proporcji domyślnego zdjęcia kamery 4:3
+const IMAGE_HEIGHT = SCREEN_W * 1.33; // Proporcja domyślnego zdjęcia 4:3
+
+// KONFIGURACJA ZACHOWAŃ PUNKTÓW
+type Behavior = 'symmetry' | 'vertical' | 'free';
+
+type LineId = 'shoulder' | 'chest' | 'waist' | 'length' | 'sleeveOut' | 'sleeveIn' | 'rise' | 'legOut' | 'legIn';
+
+const LINE_DEFS: Record<LineId, { label: string, color: string, p1: string, p2: string, behavior: Behavior, icon: string }> = {
+  shoulder: { label: 'Ramiona', color: '#00E5FF', p1: 'sl', p2: 'sr', behavior: 'symmetry', icon: 'body-outline' },
+  chest: { label: 'Klatka', color: '#69FF47', p1: 'cl', p2: 'cr', behavior: 'symmetry', icon: 'heart-outline' },
+  waist: { label: 'Talia (Pas)', color: '#FF6B6B', p1: 'wl', p2: 'wr', behavior: 'symmetry', icon: 'fitness-outline' },
+  length: { label: 'Długość całk.', color: '#C77DFF', p1: 'lt', p2: 'lb', behavior: 'vertical', icon: 'arrow-down-outline' },
+  sleeveOut: { label: 'Rękaw zewn.', color: '#FFD700', p1: 'so_t', p2: 'so_b', behavior: 'free', icon: 'analytics-outline' },
+  sleeveIn: { label: 'Rękaw wewn.', color: '#FFA500', p1: 'si_t', p2: 'si_b', behavior: 'free', icon: 'analytics-outline' },
+  rise: { label: 'Stan (Krocze-Pas)', color: '#00E5FF', p1: 'rise_t', p2: 'rise_b', behavior: 'free', icon: 'arrow-up-outline' },
+  legOut: { label: 'Nogawka zewn.', color: '#C77DFF', p1: 'lo_t', p2: 'lo_b', behavior: 'free', icon: 'analytics-outline' },
+  legIn: { label: 'Nogawka wewn.', color: '#69FF47', p1: 'li_t', p2: 'li_b', behavior: 'free', icon: 'analytics-outline' },
+};
+
+const getTextPos = (id: LineId, p1: {x:number, y:number}, p2: {x:number, y:number}) => {
+  const mx = (p1.x + p2.x) / 2;
+  const my = (p1.y + p2.y) / 2;
+
+  switch (id) {
+    case 'shoulder': return { x: mx, y: my - 16, anchor: 'middle' };
+    case 'chest': return { x: mx, y: my + 26, anchor: 'middle' };
+    case 'waist': return { x: mx, y: my + 26, anchor: 'middle' };
+    case 'length': return { x: mx + 16, y: my, anchor: 'start' };
+    case 'sleeveOut': return { x: mx, y: my - 20, anchor: 'middle' };
+    case 'sleeveIn': return { x: mx, y: my + 26, anchor: 'middle' };
+    case 'rise': return { x: mx + 16, y: my, anchor: 'start' };
+    case 'legOut': return { x: mx - 16, y: my, anchor: 'end' };
+    case 'legIn': return { x: mx + 16, y: my, anchor: 'start' };
+    default: return { x: mx, y: my - 12, anchor: 'middle' };
+  }
+};
+
+const GARMENT_CONFIG: Record<string, LineId[]> = {
+  tshirt: ['shoulder', 'chest', 'waist', 'length', 'sleeveOut', 'sleeveIn'],
+  shirt: ['shoulder', 'chest', 'waist', 'length', 'sleeveOut', 'sleeveIn'],
+  jacket: ['shoulder', 'chest', 'waist', 'length', 'sleeveOut', 'sleeveIn'],
+  pants: ['waist', 'rise', 'legOut', 'legIn'],
+  dress: ['shoulder', 'chest', 'waist', 'length'],
+  unknown: ['length', 'shoulder', 'chest', 'waist'],
+};
 
 function DraggablePoint({
   id,
   initialX,
   initialY,
-  color,
   onMove,
   onActive,
 }: {
   id: string;
   initialX: number;
   initialY: number;
-  color: string;
   onMove: (x: number, y: number) => void;
   onActive: (active: boolean, x: number, y: number) => void;
 }) {
-  // Pamięć pozycji początkowej w momencie wciśnięcia (eliminuje sprzężenie dzikich przesunięć)
   const startPos = useRef({ x: initialX, y: initialY });
-  // Używamy aktualnej pozycji ze statu jako bazy, jeśli rodzeństwo przemieściło ten punkt.
-  // Aby uniknąć stale starych closure w PanResponderze z React, przemycamy aktualną props.pozycję.
   const currPos = useRef({ x: initialX, y: initialY });
   currPos.current = { x: initialX, y: initialY };
 
@@ -51,12 +90,10 @@ function DraggablePoint({
     PanResponder.create({
       onStartShouldSetPanResponder: () => true,
       onPanResponderGrant: () => {
-        // Zamrożenie punktu startowego pod gest
         startPos.current = { x: currPos.current.x, y: currPos.current.y };
         onActive(true, currPos.current.x, currPos.current.y);
       },
       onPanResponderMove: (e, gesture) => {
-        // Czysta matematyka bazująca na startPos i delcie z palca
         const newX = startPos.current.x + gesture.dx;
         const newY = startPos.current.y + gesture.dy;
         onActive(true, newX, newY);
@@ -77,15 +114,13 @@ function DraggablePoint({
       style={[
         styles.draggablePoint,
         {
-          borderColor: color,
           left: initialX,
           top: initialY,
+          backgroundColor: 'transparent',
+          borderWidth: 0,
         },
       ]}
-    >
-      <View style={[styles.crosshairV, { backgroundColor: color }]} />
-      <View style={[styles.crosshairH, { backgroundColor: color }]} />
-    </View>
+    />
   );
 }
 
@@ -93,25 +128,28 @@ export default function ResultScreen() {
   const currentResult = useMeasurementStore((s) => s.currentResult);
   const addToHistory = useMeasurementStore((s) => s.addToHistory);
   const [saved, setSaved] = useState(false);
+  const exportSvgRef = useRef<any>(null);
 
-  const [pts, setPts] = useState({
-    sl: { x: SCREEN_W * 0.25, y: IMAGE_HEIGHT * 0.25 },
-    sr: { x: SCREEN_W * 0.75, y: IMAGE_HEIGHT * 0.25 },
-    cl: { x: SCREEN_W * 0.20, y: IMAGE_HEIGHT * 0.40 },
-    cr: { x: SCREEN_W * 0.80, y: IMAGE_HEIGHT * 0.40 },
-    wl: { x: SCREEN_W * 0.22, y: IMAGE_HEIGHT * 0.65 },
-    wr: { x: SCREEN_W * 0.78, y: IMAGE_HEIGHT * 0.65 },
-    lt: { x: SCREEN_W * 0.5, y: IMAGE_HEIGHT * 0.15 },
-    lb: { x: SCREEN_W * 0.5, y: IMAGE_HEIGHT * 0.85 },
+  // Wymiary bazowe
+  const W = SCREEN_W;
+  const H = IMAGE_HEIGHT;
+
+  const [pts, setPts] = useState<Record<string, { x: number; y: number }>>({
+    sl: { x: W * 0.25, y: H * 0.25 }, sr: { x: W * 0.75, y: H * 0.25 },
+    cl: { x: W * 0.20, y: H * 0.40 }, cr: { x: W * 0.80, y: H * 0.40 },
+    wl: { x: W * 0.22, y: H * 0.65 }, wr: { x: W * 0.78, y: H * 0.65 },
+    lt: { x: W * 0.5, y: H * 0.15 }, lb: { x: W * 0.5, y: H * 0.85 },
+    so_t: { x: W * 0.25, y: H * 0.25 }, so_b: { x: W * 0.1, y: H * 0.5 },
+    si_t: { x: W * 0.20, y: H * 0.40 }, si_b: { x: W * 0.15, y: H * 0.45 },
+    rise_t: { x: W * 0.5, y: H * 0.15 }, rise_b: { x: W * 0.5, y: H * 0.45 },
+    lo_t: { x: W * 0.2, y: H * 0.15 }, lo_b: { x: W * 0.2, y: H * 0.85 },
+    li_t: { x: W * 0.4, y: H * 0.45 }, li_b: { x: W * 0.4, y: H * 0.85 },
   });
 
-  const [garmentType, setGarmentType] = useState<'tshirt'|'pants'|'dress'|'jacket'|'shirt'|'unknown'>('tshirt');
+  const [garmentType, setGarmentType] = useState<keyof typeof GARMENT_CONFIG>('tshirt');
   const [symmetryLocked, setSymmetryLocked] = useState(false);
 
-  // Image Aspect state for math
-  const [imageDims, setImageDims] = useState<{ w: number; h: number } | null>(null);
-
-  // Zmienna lokalna powiększalnika
+  const [imageLayoutSize, setImageLayoutSize] = useState<{ width: number; height: number } | null>(null);
   const [activePoint, setActivePoint] = useState<{ x: number; y: number } | null>(null);
 
   if (!currentResult) {
@@ -127,16 +165,14 @@ export default function ResultScreen() {
 
   const { imageUri, markerFound, pixelPerCm, homographyMatrix, imageWidth, imageHeight } = currentResult;
 
-  // Matematyka na letterboxing (contain resizeMode) w celu skrajnej precyzji:
   const getTrueDistance = (p1: { x: number; y: number }, p2: { x: number; y: number }) => {
-    // Twarde rozmiary obrazu roboczego, dla którego ArUco zwróciło pixelPerCm, aby uciąć bug z EXIF density Image.getSize()
     const imgW = imageWidth || 1200;
     const imgH = imageHeight || 1600;
 
     if (pixelPerCm <= 0) return 0;
 
-    const viewW = SCREEN_W;
-    const viewH = IMAGE_HEIGHT;
+    const viewW = imageLayoutSize?.width ?? SCREEN_W;
+    const viewH = imageLayoutSize?.height ?? IMAGE_HEIGHT;
     const imgAspect = imgW / imgH;
     const viewAspect = viewW / viewH;
 
@@ -153,21 +189,12 @@ export default function ResultScreen() {
     }
 
     const scaleToOriginal = imgW / renderedW;
-
-    // Pozycje przeskalowane do przestrzeni oryginalnego obrazu (po odjęciu pustych pasków)
-    const trueP1 = {
-      x: (p1.x - offsetX) * scaleToOriginal,
-      y: (p1.y - offsetY) * scaleToOriginal,
-    };
-    const trueP2 = {
-      x: (p2.x - offsetX) * scaleToOriginal,
-      y: (p2.y - offsetY) * scaleToOriginal,
-    };
+    const trueP1 = { x: (p1.x - offsetX) * scaleToOriginal, y: (p1.y - offsetY) * scaleToOriginal };
+    const trueP2 = { x: (p2.x - offsetX) * scaleToOriginal, y: (p2.y - offsetY) * scaleToOriginal };
 
     if (homographyMatrix) {
       const hp1 = applyHomography(trueP1, homographyMatrix);
       const hp2 = applyHomography(trueP2, homographyMatrix);
-      // Odległość euklidesowa w przestrzeni CM markera referencyjnego (rzut z góry)
       const dx = hp2.x - hp1.x;
       const dy = hp2.y - hp1.y;
       return Math.sqrt(dx * dx + dy * dy);
@@ -176,29 +203,36 @@ export default function ResultScreen() {
     }
   };
 
-  // --- STATISTICAL ALLOWANCE NETWORK ---
-  // Kompensacja "Shrinkage Bias" dla krawiectwa 3D vs rzutu płaskiego 2D.
-  const allowances = {
-    tshirt: { shoulder: 1.110, chest: 1.095, waist: 1.050, length: 1.072 },
-    shirt:  { shoulder: 1.085, chest: 1.075, waist: 1.050, length: 1.055 },
-    jacket: { shoulder: 1.095, chest: 1.085, waist: 1.050, length: 1.065 },
-    pants:  { shoulder: 1.000, chest: 1.000, waist: 1.070, length: 1.045 },
-    dress:  { shoulder: 1.085, chest: 1.085, waist: 1.070, length: 1.065 },
-    unknown:{ shoulder: 1.000, chest: 1.000, waist: 1.000, length: 1.000 },
+  const calcCm = (p1Key: string, p2Key: string) => {
+    const p1 = pts[p1Key] || { x: 0, y: 0 };
+    const p2 = pts[p2Key] || { x: 0, y: 0 };
+    const val = getTrueDistance(p1, p2);
+    return isNaN(val) ? 0 : Math.round(val * 2) / 2;
   };
 
-  const currentAllowance = allowances[garmentType] || allowances.unknown;
+  const activeLines = GARMENT_CONFIG[garmentType];
+  const measurements = activeLines.map(id => {
+    const def = LINE_DEFS[id];
+    return { ...def, id, value: calcCm(def.p1, def.p2) };
+  });
 
-  const shoulderCm = Math.round(getTrueDistance(pts.sl, pts.sr) * currentAllowance.shoulder * 2) / 2;
-  const chestCm = Math.round(getTrueDistance(pts.cl, pts.cr) * currentAllowance.chest * 2) / 2;
-  const waistCm = Math.round(getTrueDistance(pts.wl, pts.wr) * currentAllowance.waist * 2) / 2;
-  const lengthCm = Math.round(getTrueDistance(pts.lt, pts.lb) * currentAllowance.length * 2) / 2;
-  const widthCm = chestCm; // traktujemy klatkę główną jako Width
+  const handleMove = (def: typeof LINE_DEFS[LineId], activeKey: string, siblingKey: string, x: number, y: number) => {
+    setPts(p => {
+      const next = { ...p, [activeKey]: { x, y } };
+      if (def.behavior === 'symmetry' && symmetryLocked) {
+        next[siblingKey] = { x: SCREEN_W - x, y };
+      } else if (def.behavior === 'vertical') {
+        next[siblingKey] = { x, y: p[siblingKey].y };
+      }
+      return next;
+    });
+  };
 
   const handleShare = async () => {
     try {
       SentinelLogger.start('Result', 'handleShare');
-      const msg = `ClothMeasure Wyniki:\nDługość: ${lengthCm}cm\nRamiona: ${shoulderCm}cm\nKlatka: ${chestCm}cm\nTalia: ${waistCm}cm`;
+      const msgLines = measurements.map(m => `${m.label}: ${m.value}cm`).join('\n');
+      const msg = `ClothMeasure Wyniki (${garmentType}):\n${msgLines}`;
       await Share.share({ message: msg, title: 'Wymiary z ClothMeasure' });
       SentinelLogger.success('Result', 'handleShare');
     } catch (e) {
@@ -206,33 +240,52 @@ export default function ResultScreen() {
     }
   };
 
+  const generateFilename = () => {
+    const d = new Date();
+    const pad = (n: number) => n.toString().padStart(2, '0');
+    return `Pomiar_${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}_${pad(d.getHours())}${pad(d.getMinutes())}${pad(d.getSeconds())}.png`;
+  };
+
   const handleSave = async () => {
     try {
       SentinelLogger.start('Result', 'handleSave');
-      if (await Sharing.isAvailableAsync()) {
-        await Sharing.shareAsync(imageUri, { mimeType: 'image/jpeg', dialogTitle: 'Zapisz zdjęcie' });
-        setSaved(true);
-        addToHistory({
-          ...currentResult,
-          id: Date.now().toString(),
-          timestamp: Date.now(),
-          measurements: {
-            garmentType: garmentType,
-            width: widthCm,
-            length: lengthCm,
-            shoulder: shoulderCm,
-            chest: chestCm,
-            waist: waistCm,
-            lines: [
-              { label: 'Długość', start: pts.lt, end: pts.lb, color: '#C77DFF', valueCm: lengthCm },
-              { label: 'Ramiona', start: pts.sl, end: pts.sr, color: '#00E5FF', valueCm: shoulderCm },
-              { label: 'Klatka', start: pts.cl, end: pts.cr, color: '#69FF47', valueCm: chestCm },
-              { label: 'Talia', start: pts.wl, end: pts.wr, color: '#FF6B6B', valueCm: waistCm },
-            ],
-            confidence: 1,
-          },
+      if (await Sharing.isAvailableAsync() && exportSvgRef.current) {
+        exportSvgRef.current.toDataURL(async (data: string) => {
+          try {
+            const tempUri = FileSystem.cacheDirectory + generateFilename();
+            const base64Data = data.includes(',') ? data.split(',')[1] : data;
+            await FileSystem.writeAsStringAsync(tempUri, base64Data, { encoding: 'base64' });
+            
+            await Sharing.shareAsync(tempUri, { mimeType: 'image/png', dialogTitle: 'Zapisz zdjęcie z miarami' });
+            setSaved(true);
+            
+            // Format history
+            addToHistory({
+              ...currentResult,
+              id: Date.now().toString(),
+              timestamp: Date.now(),
+              measurements: {
+                garmentType: garmentType,
+                width: calcCm('cl', 'cr'), // fallback dla spójności starej struktury
+                length: calcCm('lt', 'lb'),
+                shoulder: calcCm('sl', 'sr'),
+                chest: calcCm('cl', 'cr'),
+                waist: calcCm('wl', 'wr'),
+                lines: measurements.map(m => ({
+                  label: m.label,
+                  start: pts[m.p1],
+                  end: pts[m.p2],
+                  color: m.color,
+                  valueCm: m.value
+                })),
+                confidence: 1,
+              },
+            });
+            SentinelLogger.success('Result', 'handleSave');
+          } catch (err) {
+            SentinelLogger.error('Result', 'handleSaveDataUrl', err);
+          }
         });
-        SentinelLogger.success('Result', 'handleSave');
       }
     } catch (e) {
       SentinelLogger.error('Result', 'handleSave', e);
@@ -254,72 +307,66 @@ export default function ResultScreen() {
       </View>
 
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false} scrollEnabled={true}>
-        <View style={styles.imageContainer}>
-          <Image source={{ uri: imageUri }} style={styles.image} resizeMode="contain" />
+        <View 
+          style={styles.imageContainer}
+          onLayout={(e) => {
+            const { width, height } = e.nativeEvent.layout;
+            setImageLayoutSize({ width, height });
+          }}
+        >
+          {/* GŁÓWNE EKRANOWE SVG */}
+          <Svg width="100%" height="100%" style={StyleSheet.absoluteFill}>
+            <SvgImage href={{ uri: imageUri }} width="100%" height="100%" preserveAspectRatio="xMidYMid meet" />
+            
+            {activeLines.map(lineId => {
+              const def = LINE_DEFS[lineId];
+              const p1 = pts[def.p1];
+              const p2 = pts[def.p2];
+              return (
+                <G key={lineId}>
+                  <Line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke={def.color} strokeWidth="3" strokeDasharray="4 4" />
+                  
+                  {/* Text z czarną obwódką by był czytelny na każdym tle i nie nakładał się w centrum */}
+                  <SvgText x={getTextPos(lineId, p1, p2).x} y={getTextPos(lineId, p1, p2).y} fill="none" stroke="rgba(0,0,0,0.75)" strokeWidth="4" fontSize="19" fontWeight="bold" textAnchor={getTextPos(lineId, p1, p2).anchor as any}>
+                    {`${calcCm(def.p1, def.p2).toFixed(1)} cm`}
+                  </SvgText>
+                  <SvgText x={getTextPos(lineId, p1, p2).x} y={getTextPos(lineId, p1, p2).y} fill={def.color} fontSize="19" fontWeight="bold" textAnchor={getTextPos(lineId, p1, p2).anchor as any}>
+                    {`${calcCm(def.p1, def.p2).toFixed(1)} cm`}
+                  </SvgText>
+                  
+                  <Circle cx={p1.x} cy={p1.y} r="12" fill={def.color} fillOpacity="0.2" stroke={def.color} strokeWidth="2" />
+                  <Circle cx={p2.x} cy={p2.y} r="12" fill={def.color} fillOpacity="0.2" stroke={def.color} strokeWidth="2" />
+                </G>
+              );
+            })}
+          </Svg>
 
-          {/* Linie celownicze narysowane niżej zjawisk */}
-          <View style={[StyleSheet.absoluteFill, { pointerEvents: 'none' }]}>
-            <Svg width="100%" height="100%">
-              <Line x1={pts.sl.x} y1={pts.sl.y} x2={pts.sr.x} y2={pts.sr.y} stroke="#00E5FF" strokeWidth="2" strokeDasharray="4 4" />
-              <Line x1={pts.cl.x} y1={pts.cl.y} x2={pts.cr.x} y2={pts.cr.y} stroke="#69FF47" strokeWidth="2" strokeDasharray="4 4" />
-              <Line x1={pts.wl.x} y1={pts.wl.y} x2={pts.wr.x} y2={pts.wr.y} stroke="#FF6B6B" strokeWidth="2" strokeDasharray="4 4" />
-              <Line x1={pts.lt.x} y1={pts.lt.y} x2={pts.lb.x} y2={pts.lb.y} stroke="#C77DFF" strokeWidth="2" strokeDasharray="4 4" />
-            </Svg>
-          </View>
+          {/* DYNAMICZNE WĘZŁY (PAN RESPONDER) */}
+          {activeLines.map(lineId => {
+            const def = LINE_DEFS[lineId];
+            return (
+              <React.Fragment key={`drag_${lineId}`}>
+                <DraggablePoint
+                  id={def.p1} initialX={pts[def.p1].x} initialY={pts[def.p1].y}
+                  onActive={(a, x, y) => setActivePoint(a ? { x, y } : null)}
+                  onMove={(x, y) => handleMove(def, def.p1, def.p2, x, y)}
+                />
+                <DraggablePoint
+                  id={def.p2} initialX={pts[def.p2].x} initialY={pts[def.p2].y}
+                  onActive={(a, x, y) => setActivePoint(a ? { x, y } : null)}
+                  onMove={(x, y) => handleMove(def, def.p2, def.p1, x, y)}
+                />
+              </React.Fragment>
+            );
+          })}
 
-          {/* DYNAMICZNE WĘZŁY (AUTO-POZIOMOWANIE I SYMETRIA) */}
-          {/* Ramiona */}
-          <DraggablePoint
-            id="sl" initialX={pts.sl.x} initialY={pts.sl.y} color="#00E5FF"
-            onActive={(a, x, y) => setActivePoint(a ? { x, y } : null)}
-            onMove={(x, y) => setPts(p => ({ ...p, sl: { x, y }, sr: { x: symmetryLocked ? SCREEN_W - x : p.sr.x, y } }))}
-          />
-          <DraggablePoint
-            id="sr" initialX={pts.sr.x} initialY={pts.sr.y} color="#00E5FF"
-            onActive={(a, x, y) => setActivePoint(a ? { x, y } : null)}
-            onMove={(x, y) => setPts(p => ({ ...p, sr: { x, y }, sl: { x: symmetryLocked ? SCREEN_W - x : p.sl.x, y } }))}
-          />
-          {/* Klatka */}
-          <DraggablePoint
-            id="cl" initialX={pts.cl.x} initialY={pts.cl.y} color="#69FF47"
-            onActive={(a, x, y) => setActivePoint(a ? { x, y } : null)}
-            onMove={(x, y) => setPts(p => ({ ...p, cl: { x, y }, cr: { x: symmetryLocked ? SCREEN_W - x : p.cr.x, y } }))}
-          />
-          <DraggablePoint
-            id="cr" initialX={pts.cr.x} initialY={pts.cr.y} color="#69FF47"
-            onActive={(a, x, y) => setActivePoint(a ? { x, y } : null)}
-            onMove={(x, y) => setPts(p => ({ ...p, cr: { x, y }, cl: { x: symmetryLocked ? SCREEN_W - x : p.cl.x, y } }))}
-          />
-          {/* Talia */}
-          <DraggablePoint
-            id="wl" initialX={pts.wl.x} initialY={pts.wl.y} color="#FF6B6B"
-            onActive={(a, x, y) => setActivePoint(a ? { x, y } : null)}
-            onMove={(x, y) => setPts(p => ({ ...p, wl: { x, y }, wr: { x: symmetryLocked ? SCREEN_W - x : p.wr.x, y } }))}
-          />
-          <DraggablePoint
-            id="wr" initialX={pts.wr.x} initialY={pts.wr.y} color="#FF6B6B"
-            onActive={(a, x, y) => setActivePoint(a ? { x, y } : null)}
-            onMove={(x, y) => setPts(p => ({ ...p, wr: { x, y }, wl: { x: symmetryLocked ? SCREEN_W - x : p.wl.x, y } }))}
-          />
-          {/* Długość (AUTO-PION) */}
-          <DraggablePoint
-            id="lt" initialX={pts.lt.x} initialY={pts.lt.y} color="#C77DFF"
-            onActive={(a, x, y) => setActivePoint(a ? { x, y } : null)}
-            onMove={(x, y) => setPts(p => ({ ...p, lt: { x, y }, lb: { x, y: p.lb.y } }))}
-          />
-          <DraggablePoint
-            id="lb" initialX={pts.lb.x} initialY={pts.lb.y} color="#C77DFF"
-            onActive={(a, x, y) => setActivePoint(a ? { x, y } : null)}
-            onMove={(x, y) => setPts(p => ({ ...p, lb: { x, y }, lt: { x, y: p.lt.y } }))}
-          />
-
-          {/* LUPA (MAGNIFYING GLASS) */}
+          {/* LUPA */}
           {activePoint && (
             <View
               style={[
                 styles.magnifierWrap,
                 {
-                  left: activePoint.x > SCREEN_W / 2 ? 16 : SCREEN_W - 136, // Przerzucaj lupę na drugą stronę
+                  left: activePoint.x > SCREEN_W / 2 ? 16 : SCREEN_W - 136,
                   top: 16,
                 },
               ]}
@@ -361,26 +408,25 @@ export default function ResultScreen() {
         {/* Garment Picker */}
         <View style={styles.garmentPicker}>
            <Text style={styles.garmentTitle}>Typ Odzieży:</Text>
-           <View style={styles.garmentBtns}>
-              {(['tshirt', 'pants', 'dress', 'jacket', 'shirt'] as const).map(type => (
+           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.garmentBtns}>
+              {(['unknown', 'tshirt', 'pants', 'dress', 'jacket', 'shirt'] as const).map(type => (
                 <TouchableOpacity 
                   key={type} 
                   style={[styles.gBtn, garmentType === type && styles.gBtnActive]}
                   onPress={() => setGarmentType(type)}
                 >
                   <Text style={styles.gBtnEmoji}>{
-                    type === 'tshirt' ? '👕' : type === 'pants' ? '👖' : type === 'dress' ? '👗' : type === 'jacket' ? '🧥' : '👔'
+                    type === 'unknown' ? '📏' : type === 'tshirt' ? '👕' : type === 'pants' ? '👖' : type === 'dress' ? '👗' : type === 'jacket' ? '🧥' : '👔'
                   }</Text>
                 </TouchableOpacity>
               ))}
-           </View>
+           </ScrollView>
         </View>
 
         <View style={styles.measurementsTable}>
-          <MeasurementRow label="Długość" value={lengthCm} color="#C77DFF" icon="arrow-down-outline" />
-          <MeasurementRow label="Ramiona" value={shoulderCm} color="#00E5FF" icon="body-outline" />
-          <MeasurementRow label="Klatka" value={chestCm} color="#69FF47" icon="heart-outline" />
-          <MeasurementRow label="Talia" value={waistCm} color="#FF6B6B" icon="fitness-outline" />
+          {measurements.map(m => (
+            <MeasurementRow key={m.id} label={m.label} value={m.value} color={m.color} icon={m.icon} />
+          ))}
         </View>
 
         <View style={styles.actionsRow}>
@@ -389,11 +435,55 @@ export default function ResultScreen() {
             <Text style={styles.actionBtnText}>Nowe zdjęcie</Text>
           </TouchableOpacity>
           <TouchableOpacity style={[styles.actionBtn, styles.actionBtnPrimary, saved && styles.actionBtnSaved]} onPress={handleSave} disabled={saved}>
-            <Ionicons name={saved ? 'checkmark-circle' : 'save-outline'} size={20} color={saved ? '#69FF47' : '#0A0A1A'} />
-            <Text style={[styles.actionBtnText, { color: saved ? '#69FF47' : '#0A0A1A' }]}>{saved ? 'Zapisano' : 'Zapisz'}</Text>
+            <Ionicons name={saved ? 'checkmark-circle' : 'save-outline'} size={20} color={saved ? '#0A0A1A' : '#0A0A1A'} />
+            <Text style={[styles.actionBtnText, { color: saved ? '#0A0A1A' : '#0A0A1A' }]}>{saved ? 'Zapisano' : 'Zapisz (z tabelą)'}</Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
+
+      {/* OFF-SCREEN SVG DLA EKSPORTU Z DOKLEJONĄ TABELKĄ */}
+      <View style={{ position: 'absolute', top: -9999, left: -9999, zIndex: -10, opacity: 0 }}>
+        <Svg ref={exportSvgRef} width={SCREEN_W} height={IMAGE_HEIGHT + 70 + measurements.length * 36}>
+          <Rect x="0" y="0" width={SCREEN_W} height={IMAGE_HEIGHT + 70 + measurements.length * 36} fill="#111828" />
+          
+          {/* Zdjęcie na górze */}
+          <SvgImage href={{ uri: imageUri }} width={SCREEN_W} height={IMAGE_HEIGHT} preserveAspectRatio="xMidYMid meet" />
+          
+          {/* Linie na zdjęciu */}
+          {activeLines.map(lineId => {
+            const def = LINE_DEFS[lineId];
+            const p1 = pts[def.p1];
+            const p2 = pts[def.p2];
+            return (
+              <G key={`exp_${lineId}`}>
+                <Line x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y} stroke={def.color} strokeWidth="3" strokeDasharray="4 4" />
+                
+                <SvgText x={getTextPos(lineId, p1, p2).x} y={getTextPos(lineId, p1, p2).y} fill="none" stroke="rgba(0,0,0,0.75)" strokeWidth="4" fontSize="19" fontWeight="bold" textAnchor={getTextPos(lineId, p1, p2).anchor as any}>
+                  {`${calcCm(def.p1, def.p2).toFixed(1)} cm`}
+                </SvgText>
+                <SvgText x={getTextPos(lineId, p1, p2).x} y={getTextPos(lineId, p1, p2).y} fill={def.color} fontSize="19" fontWeight="bold" textAnchor={getTextPos(lineId, p1, p2).anchor as any}>
+                  {`${calcCm(def.p1, def.p2).toFixed(1)} cm`}
+                </SvgText>
+                
+                <Circle cx={p1.x} cy={p1.y} r="12" fill={def.color} fillOpacity="0.2" stroke={def.color} strokeWidth="2" />
+                <Circle cx={p2.x} cy={p2.y} r="12" fill={def.color} fillOpacity="0.2" stroke={def.color} strokeWidth="2" />
+              </G>
+            );
+          })}
+
+          {/* Tabelka doklejona pod zdjęciem */}
+          <SvgText x="16" y={IMAGE_HEIGHT + 30} fill="#FFFFFF" fontSize="20" fontWeight="bold">Podsumowanie Pomiarów</SvgText>
+          
+          {measurements.map((m, idx) => (
+            <G key={`tbl_${m.id}`}>
+              <Circle cx="24" cy={IMAGE_HEIGHT + 56 + idx * 36} r="6" fill={m.color} />
+              <SvgText x="40" y={IMAGE_HEIGHT + 62 + idx * 36} fill="#CCDDEE" fontSize="16" fontWeight="bold">{m.label}</SvgText>
+              {/* Zawsze używamy szablonu ze sztywnym miejscem po przecinku dla pięknego wyrównania w kolumnie */}
+              <SvgText x={SCREEN_W - 40} y={IMAGE_HEIGHT + 62 + idx * 36} fill={m.color} fontSize="18" fontWeight="bold" textAnchor="end">{`${m.value.toFixed(1)} cm`}</SvgText>
+            </G>
+          ))}
+        </Svg>
+      </View>
     </View>
   );
 }
@@ -405,7 +495,7 @@ function MeasurementRow({ label, value, color, icon }: { label: string; value: n
         <Ionicons name={icon as any} size={16} color={color} />
       </View>
       <Text style={styles.measurementLabel}>{label}</Text>
-      <Text style={[styles.measurementValue, { color }]}>{value} cm</Text>
+      <Text style={[styles.measurementValue, { color }]}>{`${value.toFixed(1)} cm`}</Text>
     </View>
   );
 }
@@ -425,7 +515,6 @@ const styles = StyleSheet.create({
   shareBtn: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#1E2A3A', alignItems: 'center', justifyContent: 'center' },
   scroll: { paddingBottom: 40 },
   imageContainer: { width: SCREEN_W, height: IMAGE_HEIGHT, backgroundColor: '#050510', position: 'relative' },
-  image: { width: '100%', height: '100%' },
   
   draggablePoint: {
     position: 'absolute', width: 44, height: 44, borderRadius: 22,
@@ -433,8 +522,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(20, 20, 30, 0.4)',
     marginLeft: -22, marginTop: -22,
   },
-  crosshairV: { position: 'absolute', width: 1, height: 16 },
-  crosshairH: { position: 'absolute', width: 16, height: 1 },
 
   magnifierWrap: {
     position: 'absolute', width: 120, height: 120, borderRadius: 60,
@@ -474,10 +561,10 @@ const styles = StyleSheet.create({
   actionBtnSecondary: { backgroundColor: '#1E2A3A' },
   actionBtnSaved: { backgroundColor: '#1E2A3A' },
   actionBtnText: { fontSize: 16, fontWeight: '700', color: 'white' },
-  garmentPicker: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, marginBottom: 12 },
-  garmentTitle: { fontSize: 13, color: '#8899AA', marginRight: 12, fontWeight: '600' },
-  garmentBtns: { flexDirection: 'row', gap: 8 },
-  gBtn: { width: 40, height: 40, borderRadius: 10, backgroundColor: '#1E2A3A', alignItems: 'center', justifyContent: 'center' },
+  garmentPicker: { paddingHorizontal: 16, marginBottom: 12 },
+  garmentTitle: { fontSize: 13, color: '#8899AA', marginBottom: 8, fontWeight: '600' },
+  garmentBtns: { flexDirection: 'row', gap: 12, paddingBottom: 4 },
+  gBtn: { width: 44, height: 44, borderRadius: 12, backgroundColor: '#1E2A3A', alignItems: 'center', justifyContent: 'center' },
   gBtnActive: { backgroundColor: '#00E5FF30', borderWidth: 1, borderColor: '#00E5FF' },
-  gBtnEmoji: { fontSize: 20 },
+  gBtnEmoji: { fontSize: 22 },
 });

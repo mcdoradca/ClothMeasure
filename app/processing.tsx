@@ -87,6 +87,12 @@ export default function ProcessingScreen() {
       );
 
       setCurrentResult(result);
+      console.log('====== DIAGNOSTYKA ======');
+      console.log('SCREEN_W (Telefon):', SCREEN_W);
+      console.log('pixelPerCm:', result.pixelPerCm);
+      console.log('imageWidth (Zdjęcie):', result.imageWidth);
+      console.log('imageHeight (Zdjęcie):', result.imageHeight);
+      console.log('=========================');
       SentinelLogger.success('Processing', 'startProcessing', { markerFound: result.markerFound });
 
       // Brak sztucznych opóźnień (placebo)
