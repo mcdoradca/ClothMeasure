@@ -23,7 +23,6 @@ export default function CameraScreen() {
   const [permission, requestPermission] = useCameraPermissions();
   const [facing, setFacing] = useState<CameraType>('back');
   const [flash, setFlash] = useState<'off' | 'on'>('off');
-  const [zoom, setZoom] = useState(0);
   const [isCapturing, setIsCapturing] = useState(false);
   const cameraRef = useRef<CameraView>(null);
   const setCapturedImageUri = useMeasurementStore((s) => s.setCapturedImageUri);
@@ -127,7 +126,7 @@ export default function CameraScreen() {
         style={StyleSheet.absoluteFill}
         facing={facing}
         flash={flash}
-        zoom={zoom}
+        zoom={0}
       />
       
       {/* UI Overlay */}
@@ -178,29 +177,6 @@ export default function CameraScreen() {
               </Text>
             </View>
           </View>
-        </View>
-
-
-        {/* Zoom Controls */}
-        <View style={styles.zoomControls}>
-          <TouchableOpacity 
-            style={[styles.zoomBtn, zoom === 0 && styles.zoomBtnActive]} 
-            onPress={() => setZoom(0)}
-          >
-            <Text style={[styles.zoomBtnText, zoom === 0 && styles.zoomBtnTextActive]}>1x</Text>
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={[styles.zoomBtn, zoom === 0.03 && styles.zoomBtnActive]} 
-            onPress={() => setZoom(0.03)}
-          >
-            <Text style={[styles.zoomBtnText, zoom === 0.03 && styles.zoomBtnTextActive]}>2x</Text>
-          </TouchableOpacity>
-          <TouchableOpacity 
-            style={[styles.zoomBtn, zoom === 0.06 && styles.zoomBtnActive]} 
-            onPress={() => setZoom(0.06)}
-          >
-            <Text style={[styles.zoomBtnText, zoom === 0.06 && styles.zoomBtnTextActive]}>3x</Text>
-          </TouchableOpacity>
         </View>
 
         {/* Dolny pasek kontrolny */}
@@ -381,34 +357,5 @@ const styles = StyleSheet.create({
     height: 56,
     borderRadius: 28,
     backgroundColor: 'white',
-  },
-  zoomControls: {
-    position: 'absolute',
-    right: 16,
-    bottom: 120,
-    backgroundColor: 'rgba(0,0,0,0.5)',
-    borderRadius: 20,
-    paddingVertical: 8,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  zoomBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginVertical: 4,
-  },
-  zoomBtnActive: {
-    backgroundColor: '#00E5FF',
-  },
-  zoomBtnText: {
-    color: 'white',
-    fontSize: 12,
-    fontWeight: 'bold',
-  },
-  zoomBtnTextActive: {
-    color: '#0A0A1A',
   },
 });
