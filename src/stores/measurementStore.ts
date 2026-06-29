@@ -5,96 +5,76 @@
 import { create } from 'zustand';
 import { HistoryEntry, ProcessingResult } from '../types';
 import * as FileSystem from 'expo-file-system/legacy';
+import { SentinelLogger } from '../utils/logger';
 
-interface MeasurementStore {
-  // Aktualny wynik przetwarzania
-  currentResult: ProcessingResult | null;
-  setCurrentResult: (result: ProcessingResult | null) => void;
+const HISTORY_FILE = FileSystem.documentDirectory + 'clothmeasure_history.json';
 
-  // URI zdjęcia zrobionego kamerą
+interface MeasurementState {
   capturedImageUri: string | null;
-  setCapturedImageUri: (uri: string | null) => void;
-
-  // Postęp przetwarzania
+  currentResult: ProcessingResult | null;
+  history: HistoryEntry[];
   processingProgress: number;
   processingStep: string;
+  setCapturedImageUri: (uri: string | null) => void;
+  setCurrentResult: (res: ProcessingResult | null) => void;
   setProcessingProgress: (progress: number, step: string) => void;
-
-  // Historia pomiarów
-  history: HistoryEntry[];
-  addToHistory: (result: ProcessingResult, name?: string) => void;
+  addToHistory: (entry: HistoryEntry) => void;
   deleteHistoryEntry: (id: string) => void;
   clearHistory: () => void;
   loadHistory: () => Promise<void>;
-
-  // Tryb offline/debug
-  debugMode: boolean;
-  toggleDebugMode: () => void;
 }
 
-const HISTORY_FILE = (FileSystem.documentDirectory || '') + 'clothmeasure_history.json';
-
-export const useMeasurementStore = create<MeasurementStore>((set, get) => ({
-  currentResult: null,
-  setCurrentResult: (result) => set({ currentResult: result }),
-
+export const useMeasurementStore = create<MeasurementState>((set, get) => ({
   capturedImageUri: null,
-  setCapturedImageUri: (uri) => set({ capturedImageUri: uri }),
-
+  currentResult: null,
+  history: [],
   processingProgress: 0,
   processingStep: '',
-  setProcessingProgress: (progress, step) =>
-    set({ processingProgress: progress, processingStep: step }),
 
-  history: [],
+  setCapturedImageUri: (uri) => set({ capturedImageUri: uri }),
+  setCurrentResult: (res) => set({ currentResult: res }),
+  setProcessingProgress: (progress, step) => set({ processingProgress: progress, processingStep: step }),
 
-  addToHistory: (result, name) => {
-    if (!result.success || !result.measurements) return;
-
-    const entry: HistoryEntry = {
-      id: Date.now().toString(),
-      timestamp: Date.now(),
-      imageUri: result.imageUri,
-      measurements: result.measurements,
-      garmentName: name,
-    };
-
-    set((state) => {
-      const newHistory = [entry, ...state.history].slice(0, 50); // max 50 wpisów
-      // Zapisz do pliku w tle
-      FileSystem.writeAsStringAsync(HISTORY_FILE, JSON.stringify(newHistory)).catch((e) =>
-        console.error('[Store] Błąd zapisu historii:', e)
-      );
-      return { history: newHistory };
-    });
+  addToHistory: (entry) => {
+    SentinelLogger.start('Store', 'addToHistory', { id: entry.id });
+    const newHistory = [entry, ...get().history];
+    set({ history: newHistory });
+    FileSystem.writeAsStringAsync(HISTORY_FILE, JSON.stringify(newHistory))
+      .then(() => SentinelLogger.success('Store', 'addToHistory'))
+      .catch((e) => SentinelLogger.error('Store', 'addToHistory', e));
   },
 
   deleteHistoryEntry: (id) => {
-    set((state) => {
-      const newHistory = state.history.filter((e) => e.id !== id);
-      FileSystem.writeAsStringAsync(HISTORY_FILE, JSON.stringify(newHistory)).catch(console.error);
-      return { history: newHistory };
-    });
+    SentinelLogger.start('Store', 'deleteHistoryEntry', { id });
+    const newHistory = get().history.filter(e => e.id !== id);
+    set({ history: newHistory });
+    FileSystem.writeAsStringAsync(HISTORY_FILE, JSON.stringify(newHistory))
+      .then(() => SentinelLogger.success('Store', 'deleteHistoryEntry'))
+      .catch((e) => SentinelLogger.error('Store', 'deleteHistoryEntry', e));
   },
 
   clearHistory: () => {
-    FileSystem.deleteAsync(HISTORY_FILE, { idempotent: true }).catch(console.error);
+    SentinelLogger.start('Store', 'clearHistory');
     set({ history: [] });
+    FileSystem.deleteAsync(HISTORY_FILE, { idempotent: true })
+      .then(() => SentinelLogger.success('Store', 'clearHistory'))
+      .catch((e) => SentinelLogger.error('Store', 'clearHistory', e));
   },
 
   loadHistory: async () => {
+    SentinelLogger.start('Store', 'loadHistory');
     try {
-      const exists = await FileSystem.getInfoAsync(HISTORY_FILE);
-      if (exists.exists) {
+      const fileInfo = await FileSystem.getInfoAsync(HISTORY_FILE);
+      if (fileInfo.exists) {
         const data = await FileSystem.readAsStringAsync(HISTORY_FILE);
-        const history = JSON.parse(data) as HistoryEntry[];
-        set({ history });
+        set({ history: JSON.parse(data) });
+        SentinelLogger.success('Store', 'loadHistory', { count: JSON.parse(data).length });
+      } else {
+        SentinelLogger.success('Store', 'loadHistory (empty)');
       }
     } catch (e) {
-      console.error('[Store] Błąd ładowania historii:', e);
+      SentinelLogger.error('Store', 'loadHistory', e);
+      set({ history: [] });
     }
   },
-
-  debugMode: false,
-  toggleDebugMode: () => set((state) => ({ debugMode: !state.debugMode })),
 }));

@@ -10,6 +10,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useMeasurementStore } from '../src/stores/measurementStore';
 import { getGarmentName } from '../src/algorithms/annotation';
 import { HistoryEntry } from '../src/types';
+import { SentinelLogger } from '../src/utils/logger';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
@@ -27,16 +28,24 @@ export default function HistoryScreen() {
   const clearHistory = useMeasurementStore(s => s.clearHistory);
 
   const handleDelete = (id: string) => {
+    SentinelLogger.start('History', 'handleDelete', { id });
     Alert.alert('Usuń pomiar', 'Czy na pewno chcesz usunąć ten pomiar?', [
-      { text: 'Anuluj', style: 'cancel' },
-      { text: 'Usuń', style: 'destructive', onPress: () => deleteHistoryEntry(id) },
+      { text: 'Anuluj', style: 'cancel', onPress: () => SentinelLogger.success('History', 'handleDelete', 'cancelled') },
+      { text: 'Usuń', style: 'destructive', onPress: () => {
+          deleteHistoryEntry(id);
+          SentinelLogger.success('History', 'handleDelete', 'confirmed');
+      }},
     ]);
   };
 
   const handleClearAll = () => {
+    SentinelLogger.start('History', 'handleClearAll');
     Alert.alert('Wyczyść historię', 'Usuń wszystkie zapisane pomiary?', [
-      { text: 'Anuluj', style: 'cancel' },
-      { text: 'Wyczyść', style: 'destructive', onPress: clearHistory },
+      { text: 'Anuluj', style: 'cancel', onPress: () => SentinelLogger.success('History', 'handleClearAll', 'cancelled') },
+      { text: 'Wyczyść', style: 'destructive', onPress: () => {
+          clearHistory();
+          SentinelLogger.success('History', 'handleClearAll', 'confirmed');
+      }},
     ]);
   };
 

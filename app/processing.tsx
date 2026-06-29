@@ -12,6 +12,7 @@ import { router } from 'expo-router';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useMeasurementStore } from '../src/stores/measurementStore';
 import { processClothingImage } from '../src/algorithms/imageProcessor';
+import { SentinelLogger } from '../src/utils/logger';
 
 const { width: SCREEN_W } = Dimensions.get('window');
 
@@ -19,9 +20,7 @@ const STEPS = [
   { id: 'prepare', label: 'Przygotowywanie obrazu', icon: '🖼️' },
   { id: 'pixels', label: 'Odczyt pikseli', icon: '📊' },
   { id: 'aruco', label: 'Detekcja markera ArUco', icon: '🎯' },
-  { id: 'edges', label: 'Wykrywanie krawędzi', icon: '✂️' },
-  { id: 'measure', label: 'Obliczanie wymiarów', icon: '📐' },
-  { id: 'render', label: 'Rysowanie adnotacji', icon: '🎨' },
+  { id: 'manual_ui', label: 'Inicjalizacja środowiska manualnego', icon: '🛠️' },
 ];
 
 export default function ProcessingScreen() {
@@ -77,6 +76,7 @@ export default function ProcessingScreen() {
 
   const startProcessing = async () => {
     if (!capturedImageUri) return;
+    SentinelLogger.start('Processing', 'startProcessing');
 
     try {
       const result = await processClothingImage(
@@ -87,12 +87,12 @@ export default function ProcessingScreen() {
       );
 
       setCurrentResult(result);
+      SentinelLogger.success('Processing', 'startProcessing', { markerFound: result.markerFound });
 
-      // Krótkie opóźnienie dla UX
-      await new Promise((r) => setTimeout(r, 300));
+      // Brak sztucznych opóźnień (placebo)
       router.replace('/result');
     } catch (error) {
-      console.error('[Processing] Krytyczny błąd:', error);
+      SentinelLogger.error('Processing', 'startProcessing', error);
       router.replace('/result');
     }
   };

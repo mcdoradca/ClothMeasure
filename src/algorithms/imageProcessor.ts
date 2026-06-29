@@ -7,13 +7,10 @@ import * as FileSystem from 'expo-file-system/legacy';
 import * as ImageManipulator from 'expo-image-manipulator';
 import { ProcessingResult } from '../types';
 import { detectArucoMarker } from './arucoDetector';
-import { cannyEdgeDetection, findClothingContour } from './edgeDetection';
 import {
-  calculateGarmentMeasurements,
   calculatePixelPerCm,
   estimatePixelPerCmFromImageSize,
 } from './measurement';
-import { renderAnnotations } from './annotation';
 import { zlibDecompress, unfilterPNG } from './inflate';
 
 const MAX_PROCESS_WIDTH = 1200; // px — balans jakość/wydajność
@@ -70,76 +67,33 @@ export async function processClothingImage(
       ? calculatePixelPerCm(marker!)
       : estimatePixelPerCmFromImageSize(procWidth, procHeight);
 
-    onProgress?.('Wykrywam kontury ubrania…', 55);
+    onProgress?.('Inicjalizacja środowiska manualnego…', 85);
 
-    // 4. Canny edge detection
-    const edges = cannyEdgeDetection(pixelData, procWidth, procHeight, 4);
+    // [HIBERNACJA] Automatyka Canny Edge oraz rysowanie statycznych adnotacji
+    // zostały zahibernowane na rzecz Manual UI (ADR 0005).
 
-    // 5. Znajdź kontur
-    const contour = findClothingContour(edges, procWidth, procHeight);
-
-    if (!contour) {
-      return {
-        success: false,
-        imageUri: resizeResult.uri,
-        annotatedImageBase64: '',
-        measurements: null,
-        errorMessage:
-          'Nie udało się wykryć konturu ubrania. Upewnij się, że ubranie kontrastuje z tłem.',
-        processingTimeMs: Date.now() - startTime,
-        pixelPerCm: measurementContext.pixelPerCm,
-        markerFound,
-      };
-    }
-
-    // Zbuduj pudełko wykluczające obszar fizycznej kartki A4 z detekcji krawędzi ubrania
-    let markerExcludeBox;
-    if (marker) {
-      const cx = (marker.corners[0].x + marker.corners[2].x) / 2;
-      const cy = (marker.corners[0].y + marker.corners[2].y) / 2;
-      // Zakładamy, że kartka (np. A4) może być do 3x szersza niż marker z każdej strony
-      const exclusionRadius = marker.sidePixels * 3;
-      markerExcludeBox = {
-        minX: cx - exclusionRadius,
-        maxX: cx + exclusionRadius,
-        minY: cy - exclusionRadius,
-        maxY: cy + exclusionRadius,
-      };
-    }
-
-    onProgress?.('Obliczam wymiary…', 70);
-
-    // 6. Oblicz wymiary (przekazując markerExcludeBox by zablokować błędy krawędzi z kartki)
-    const measurements = calculateGarmentMeasurements(
-      contour.boundingBox,
-      edges,
-      procWidth,
-      procHeight,
-      measurementContext,
-      markerExcludeBox
-    );
-
-    onProgress?.('Rysuję adnotacje…', 85);
-
-    // 7. Rysuj adnotacje na zdjęciu
-    const annotatedBase64 = await renderAnnotations(
-      resizeResult.uri,
-      procWidth,
-      procHeight,
-      measurements,
-      marker
-    );
+    // Generujemy początkowe puste dane dla ekranu ResultScreen, który zainicjalizuje suwaki
+    const initialMeasurements = {
+      garmentType: 'unknown' as any,
+      width: 0,
+      length: 0,
+      lines: [],
+      confidence: measurementContext.confidence,
+    };
 
     onProgress?.('Gotowe!', 100);
 
     return {
       success: true,
       imageUri: resizeResult.uri,
-      annotatedImageBase64: annotatedBase64,
-      measurements,
+      annotatedImageBase64: '', // Adnotacje rysuje React Native
+      measurements: initialMeasurements,
       processingTimeMs: Date.now() - startTime,
       pixelPerCm: measurementContext.pixelPerCm,
+      homographyMatrix: measurementContext.homographyMatrix,
       markerFound,
+      imageWidth: resizeResult.width,
+      imageHeight: resizeResult.height,
     };
   } catch (error) {
     console.error('[ImageProcessor] Błąd przetwarzania:', error);

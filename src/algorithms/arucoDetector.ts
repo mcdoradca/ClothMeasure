@@ -5,6 +5,7 @@
 // =========================================
 
 import { ArucoMarker, Point } from '../types';
+import { SentinelLogger } from '../utils/logger';
 
 // ArUco słownik 4x4 (50 markerów) — zakodowane wzory bitowe
 const ARUCO_4x4_PATTERNS: Record<number, number[][]> = {
@@ -142,6 +143,81 @@ function getBoundingBox(points: Point[]): { minX: number; minY: number; maxX: nu
   return { minX, minY, maxX, maxY };
 }
 
+function getCorners(points: Point[]): [Point, Point, Point, Point] {
+  // 1. Wylicz środek ciężkości markera
+  let cx = 0, cy = 0;
+  for (const p of points) {
+    cx += p.x;
+    cy += p.y;
+  }
+  cx /= points.length;
+  cy /= points.length;
+
+  // 2. Znajdź punkt A najdalszy od środka ciężkości (gwarantowany narożnik)
+  let A = points[0];
+  let maxDistA = -1;
+  for (const p of points) {
+    const d = (p.x - cx) ** 2 + (p.y - cy) ** 2;
+    if (d > maxDistA) {
+      maxDistA = d;
+      A = p;
+    }
+  }
+
+  // 3. Znajdź punkt C najdalszy od punktu A (przeciwległy narożnik na przekątnej)
+  let C = points[0];
+  let maxDistC = -1;
+  for (const p of points) {
+    const d = (p.x - A.x) ** 2 + (p.y - A.y) ** 2;
+    if (d > maxDistC) {
+      maxDistC = d;
+      C = p;
+    }
+  }
+
+  // 4. Znajdź punkty B i D leżące najdalej od linii AC (pozostałe dwa narożniki)
+  let B = points[0];
+  let D = points[0];
+  let maxPosDist = -Infinity;
+  let maxNegDist = Infinity;
+
+  const dy = C.y - A.y;
+  const dx = C.x - A.x;
+  const c = C.x * A.y - C.y * A.x;
+
+  for (const p of points) {
+    const dist = dy * p.x - dx * p.y + c;
+    if (dist > maxPosDist) {
+      maxPosDist = dist;
+      B = p;
+    }
+    if (dist < maxNegDist) {
+      maxNegDist = dist;
+      D = p;
+    }
+  }
+
+  // 5. Uporządkuj narożniki [Top-Left, Top-Right, Bottom-Right, Bottom-Left]
+  // używając kąta atan2 z ich środka geometrycznego.
+  const corners = [A, B, C, D];
+  
+  let ccx = 0, ccy = 0;
+  for (const p of corners) {
+    ccx += p.x;
+    ccy += p.y;
+  }
+  ccx /= 4;
+  ccy /= 4;
+
+  corners.sort((p1, p2) => {
+    const a1 = Math.atan2(p1.y - ccy, p1.x - ccx);
+    const a2 = Math.atan2(p2.y - ccy, p2.x - ccx);
+    return a1 - a2;
+  });
+
+  return [corners[0], corners[1], corners[2], corners[3]];
+}
+
 function isSquarish(
   minX: number, minY: number, maxX: number, maxY: number
 ): boolean {
@@ -149,7 +225,7 @@ function isSquarish(
   const h = maxY - minY;
   if (w < 15 || h < 15) return false;
   const ratio = Math.min(w, h) / Math.max(w, h);
-  return ratio > 0.65; // przynajmniej 65% zbliżone do kwadratu
+  return ratio > 0.75; // przynajmniej 75% zbliżone do kwadratu (eliminacja cieni i zagięć)
 }
 
 function sampleMarkerBits(
@@ -241,31 +317,43 @@ export function detectArucoMarker(
 
       // Sprawdź wypełnienie — marker ArUco ma w środku białe piksele i nie jest litym blokiem.
       // Dodatkowo obrót z perspektywy zwiększa pole bounding boxa (białe trójkąty w rogach).
-      // Klasyczny marker ma fill ratio w granicach 0.10 - 0.25
+      // Klasyczny marker ma fill ratio w granicach 0.15 - 0.25 (podbito z 0.08)
       const bbox_area = w * h;
       const fill_ratio = comp.length / bbox_area;
-      if (fill_ratio < 0.08) {
+      if (fill_ratio < 0.15) {
         if (isBigEnoughToLog) console.log(`[ArUco Reject] W: ${w}, H: ${h} -> Fill ratio too low: ${fill_ratio.toFixed(2)}`);
-        continue; // tylko ekstremalnie cienkie nitki odrzucamy
+        continue; // rygorystyczne odrzucanie pajęczyn i splotów swetra
       }
 
       // Sprawdź czy obszar wewnątrz ma wzór czarnej ramki (border)
       // Próg znacznie obniżony, bo bbox przy perspektywie pokrywa dużo białego tła
       const borderOk = checkBlackBorder(binary, processWidth, minX, minY, maxX, maxY);
       if (!borderOk) {
-        if (isBigEnoughToLog) console.log(`[ArUco Reject] W: ${w}, H: ${h} -> Border check failed`);
+        if (isBigEnoughToLog) console.log(`[ArUco Reject] BorderGuard W: ${w}, H: ${h} -> rejected`);
         continue;
       }
 
-      // Oblicz narożniki w oryginalnej skali
+      // Strażnik Wewnętrznej Wariancji (Odcięcie False Positives na gładkich tkaninach)
+      const varianceOk = checkInnerVariance(binary, processWidth, minX, minY, maxX, maxY);
+      if (!varianceOk) {
+        if (isBigEnoughToLog) console.log(`[ArUco Reject] VarianceGuard W: ${w}, H: ${h} -> rejected (smooth surface)`);
+        continue;
+      }
+
+      // Oblicz precyzyjne narożniki z komponentu (omija skośne błędy BBoxa)
+      const compCorners = getCorners(comp);
       const corners: [Point, Point, Point, Point] = [
-        { x: minX * scale, y: minY * scale },
-        { x: maxX * scale, y: minY * scale },
-        { x: maxX * scale, y: maxY * scale },
-        { x: minX * scale, y: maxY * scale },
+        { x: compCorners[0].x * scale, y: compCorners[0].y * scale },
+        { x: compCorners[1].x * scale, y: compCorners[1].y * scale },
+        { x: compCorners[2].x * scale, y: compCorners[2].y * scale },
+        { x: compCorners[3].x * scale, y: compCorners[3].y * scale },
       ];
 
-      const sidePixels = Math.round(((w + h) / 2) * scale);
+      const s1 = distance(corners[0], corners[1]);
+      const s2 = distance(corners[1], corners[2]);
+      const s3 = distance(corners[2], corners[3]);
+      const s4 = distance(corners[3], corners[0]);
+      const sidePixels = (s1 + s2 + s3 + s4) / 4;
 
       console.log('[ArUco] Kandydat:', w, 'x', h, 'px, fill:', (fill_ratio * 100).toFixed(0) + '%',
         '| pos:', minX, minY, '| sidePixels:', sidePixels);
@@ -278,17 +366,17 @@ export function detectArucoMarker(
     }
 
     if (markerCandidates.length === 0) {
-      console.log('[ArUco] Brak kandydatów po filtracji');
+      SentinelLogger.error('ArUco', 'detectMarker', 'Brak zweryfikowanych kandydatów');
       return null;
     }
 
     // Zwróć największy wykryty marker (najbardziej wiarygodny)
     markerCandidates.sort((a, b) => b.sidePixels - a.sidePixels);
-    console.log('[ArUco] Wybrany marker: sidePixels =', markerCandidates[0].sidePixels);
+    SentinelLogger.success('ArUco', 'detectMarker', { sidePixels: markerCandidates[0].sidePixels });
     return markerCandidates[0];
 
   } catch (e) {
-    console.log('[ArUco] Błąd detekcji:', e);
+    SentinelLogger.error('ArUco', 'detectMarker', e);
     return null;
   }
 }
@@ -329,6 +417,34 @@ function checkBlackBorder(
   }
 
   return totalSamples > 0 && darkCount / totalSamples > 0.1;
+}
+
+function checkInnerVariance(
+  binary: Uint8Array,
+  width: number,
+  minX: number, minY: number,
+  maxX: number, maxY: number
+): boolean {
+  const w = maxX - minX;
+  const h = maxY - minY;
+  // Badamy samo "serce" by pominąć ew. zewnętrzne zakłócenia (margines 25%)
+  const padX = Math.floor(w * 0.25);
+  const padY = Math.floor(h * 0.25);
+  
+  let white = 0;
+  let black = 0;
+  for(let y = minY + padY; y < maxY - padY; y+=2) {
+    for(let x = minX + padX; x < maxX - padX; x+=2) {
+      if (binary[y * width + x] === 1) black++;
+      else white++;
+    }
+  }
+  const total = white + black;
+  if (total === 0) return false;
+  const whiteRatio = white / total;
+  // Prawdziwy kod ma białe moduły na czarnym tle. 
+  // Gładka koszulka da blisko 0% bieli (sama czerń ze szwu) albo 100% bieli z plamy
+  return whiteRatio > 0.10 && whiteRatio < 0.90;
 }
 
 function downsampleRGBA(

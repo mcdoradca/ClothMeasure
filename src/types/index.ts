@@ -60,7 +60,10 @@ export interface ProcessingResult {
   errorMessage?: string;
   processingTimeMs: number;
   pixelPerCm: number;
+  homographyMatrix?: number[];
   markerFound: boolean;
+  imageWidth?: number;
+  imageHeight?: number;
 }
 
 export interface HistoryEntry {

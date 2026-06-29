@@ -238,7 +238,7 @@ export function inflate(compressedData: Uint8Array): Uint8Array {
   const reader = new BitReader(compressedData);
   
   // Zakładamy na start sensowny rozmiar (np. 1MB) i będziemy rozszerzać wykładniczo
-  let output = new Uint8Array(1024 * 1024);
+  let output: any = new Uint8Array(1024 * 1024);
   const state = { pos: 0 };
 
   let bfinal = 0;

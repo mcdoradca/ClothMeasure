@@ -6,6 +6,8 @@
 import { ArucoMarker, GarmentMeasurements, GarmentType, MeasurementLine, Point } from '../types';
 import { measureWidthAtY } from './edgeDetection';
 
+import { getPerspectiveTransform } from './perspective';
+
 // Standardowe rozmiary obiektów referencyjnych
 const REFERENCE_SIZES: Record<string, { widthCm: number; heightCm: number }> = {
   aruco_10cm: { widthCm: 10, heightCm: 10 },
@@ -15,6 +17,7 @@ const REFERENCE_SIZES: Record<string, { widthCm: number; heightCm: number }> = {
 
 export interface MeasurementContext {
   pixelPerCm: number;
+  homographyMatrix?: number[];
   referenceType: 'aruco' | 'credit_card' | 'a4' | 'unknown';
   confidence: number;
 }
@@ -32,8 +35,19 @@ export function calculatePixelPerCm(marker: ArucoMarker): MeasurementContext {
 
   const pixelPerCm = markerSidePx / MARKER_SIZE_CM;
 
+  // dst corners for a perfect 10x10 cm square (w CM!)
+  const dst: Point[] = [
+    { x: 0, y: 0 },
+    { x: MARKER_SIZE_CM, y: 0 },
+    { x: MARKER_SIZE_CM, y: MARKER_SIZE_CM },
+    { x: 0, y: MARKER_SIZE_CM },
+  ];
+
+  const homographyMatrix = getPerspectiveTransform(marker.corners, dst) || undefined;
+
   return {
     pixelPerCm,
+    homographyMatrix,
     referenceType: 'aruco',
     confidence: markerSidePx > 100 ? 1.0 : markerSidePx > 50 ? 0.8 : 0.6,
   };
@@ -60,7 +74,10 @@ export function estimatePixelPerCmFromImageSize(
 }
 
 /**
- * Oblicz wymiary ubrania na podstawie bounding box i mapy krawędzi
+ * [HIBERNACJA - DEPRECATED w V1]
+ * Oblicz wymiary ubrania na podstawie automatycznie detekowanego bounding box i mapy krawędzi.
+ * Zastąpione w ADR 0005 przez ManualUI (PanResponder) i odległości Euklidesowe.
+ * Zostawione w kodzie dla rozwoju V2 (zewnętrzne API segmentacyjne).
  */
 export function calculateGarmentMeasurements(
   boundingBox: { minX: number; minY: number; maxX: number; maxY: number },
@@ -204,4 +221,16 @@ function detectGarmentType(widthCm: number, lengthCm: number): GarmentType {
  */
 export function roundToHalfCm(value: number): number {
   return Math.round(value * 2) / 2;
+}
+
+/**
+ * [MANUAL UI]
+ * Oblicz odległość euklidesową w centymetrach między dwoma punktami x/y.
+ */
+export function calculateDistanceCm(p1: Point, p2: Point, pixelPerCm: number): number {
+  if (pixelPerCm <= 0) return 0;
+  const dx = p2.x - p1.x;
+  const dy = p2.y - p1.y;
+  const distancePx = Math.sqrt(dx * dx + dy * dy);
+  return roundToHalfCm(distancePx / pixelPerCm);
 }
