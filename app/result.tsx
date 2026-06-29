@@ -14,7 +14,7 @@ import {
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import Svg, { Line, Circle, Text as SvgText, Image as SvgImage, Rect, G } from 'react-native-svg';
+import Svg, { Line, Circle, Text as SvgText, Image as SvgImage, Rect, G, Polygon } from 'react-native-svg';
 import * as Sharing from 'expo-sharing';
 import * as FileSystem from 'expo-file-system/legacy';
 import { useMeasurementStore } from '../src/stores/measurementStore';
@@ -165,32 +165,42 @@ export default function ResultScreen() {
 
   const { imageUri, markerFound, pixelPerCm, homographyMatrix, imageWidth, imageHeight } = currentResult;
 
-  const getTrueDistance = (p1: { x: number; y: number }, p2: { x: number; y: number }) => {
-    const imgW = imageWidth || 1200;
-    const imgH = imageHeight || 1600;
+  // --- Viewport Mapping (DRY) ---
+  const imgW = imageWidth || 1200;
+  const imgH = imageHeight || 1600;
+  const viewW = imageLayoutSize?.width ?? SCREEN_W;
+  const viewH = imageLayoutSize?.height ?? IMAGE_HEIGHT;
+  
+  const imgAspect = imgW / imgH;
+  const viewAspect = viewW / viewH;
 
+  let renderedW = viewW, renderedH = viewH, offsetX = 0, offsetY = 0;
+  if (imgAspect > viewAspect) {
+    renderedH = viewW / imgAspect;
+    offsetY = (viewH - renderedH) / 2;
+  } else {
+    renderedW = viewH * imgAspect;
+    offsetX = (viewW - renderedW) / 2;
+  }
+  const scaleToOriginal = imgW / renderedW;
+  const scaleToView = renderedW / imgW;
+
+  const mapScreenToOriginal = (p: {x: number, y: number}) => ({
+    x: (p.x - offsetX) * scaleToOriginal,
+    y: (p.y - offsetY) * scaleToOriginal
+  });
+
+  const mapOriginalToScreen = (p: {x: number, y: number}) => ({
+    x: p.x * scaleToView + offsetX,
+    y: p.y * scaleToView + offsetY
+  });
+  // ------------------------------
+
+  const getTrueDistance = (p1: { x: number; y: number }, p2: { x: number; y: number }) => {
     if (pixelPerCm <= 0) return 0;
 
-    const viewW = imageLayoutSize?.width ?? SCREEN_W;
-    const viewH = imageLayoutSize?.height ?? IMAGE_HEIGHT;
-    const imgAspect = imgW / imgH;
-    const viewAspect = viewW / viewH;
-
-    let renderedW, renderedH, offsetX = 0, offsetY = 0;
-
-    if (imgAspect > viewAspect) {
-      renderedW = viewW;
-      renderedH = viewW / imgAspect;
-      offsetY = (viewH - renderedH) / 2;
-    } else {
-      renderedH = viewH;
-      renderedW = viewH * imgAspect;
-      offsetX = (viewW - renderedW) / 2;
-    }
-
-    const scaleToOriginal = imgW / renderedW;
-    const trueP1 = { x: (p1.x - offsetX) * scaleToOriginal, y: (p1.y - offsetY) * scaleToOriginal };
-    const trueP2 = { x: (p2.x - offsetX) * scaleToOriginal, y: (p2.y - offsetY) * scaleToOriginal };
+    const trueP1 = mapScreenToOriginal(p1);
+    const trueP2 = mapScreenToOriginal(p2);
 
     if (homographyMatrix) {
       const hp1 = applyHomography(trueP1, homographyMatrix);
@@ -318,6 +328,18 @@ export default function ResultScreen() {
           <Svg width="100%" height="100%" style={StyleSheet.absoluteFill}>
             <SvgImage href={{ uri: imageUri }} width="100%" height="100%" preserveAspectRatio="xMidYMid meet" />
             
+            {currentResult.arucoCorners && (
+              <Polygon
+                points={currentResult.arucoCorners.map(c => {
+                  const mapped = mapOriginalToScreen(c);
+                  return `${mapped.x},${mapped.y}`;
+                }).join(' ')}
+                fill="rgba(105, 255, 71, 0.2)"
+                stroke="#69FF47"
+                strokeWidth="2"
+              />
+            )}
+
             {activeLines.map(lineId => {
               const def = LINE_DEFS[lineId];
               const p1 = pts[def.p1];
@@ -449,6 +471,18 @@ export default function ResultScreen() {
           {/* Zdjęcie na górze */}
           <SvgImage href={{ uri: imageUri }} width={SCREEN_W} height={IMAGE_HEIGHT} preserveAspectRatio="xMidYMid meet" />
           
+          {currentResult.arucoCorners && (
+            <Polygon
+              points={currentResult.arucoCorners.map(c => {
+                const mapped = mapOriginalToScreen(c);
+                return `${mapped.x},${mapped.y}`;
+              }).join(' ')}
+              fill="rgba(105, 255, 71, 0.2)"
+              stroke="#69FF47"
+              strokeWidth="2"
+            />
+          )}
+
           {/* Linie na zdjęciu */}
           {activeLines.map(lineId => {
             const def = LINE_DEFS[lineId];

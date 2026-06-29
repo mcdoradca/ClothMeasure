@@ -64,6 +64,7 @@ export interface ProcessingResult {
   markerFound: boolean;
   imageWidth?: number;
   imageHeight?: number;
+  arucoCorners?: [Point, Point, Point, Point];
 }
 
 export interface HistoryEntry {

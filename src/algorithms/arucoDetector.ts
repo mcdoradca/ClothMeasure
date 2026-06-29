@@ -143,7 +143,124 @@ function getBoundingBox(points: Point[]): { minX: number; minY: number; maxX: nu
   return { minX, minY, maxX, maxY };
 }
 
-function getCorners(points: Point[]): [Point, Point, Point, Point] {
+function getCorners(comp: Point[], binary: Uint8Array, width: number, height: number): [Point, Point, Point, Point] {
+  // 1. Zgrubne rogi ze starego algorytmu (są narażone na szum)
+  const rough = getCornersFast(comp);
+
+  // 2. Znajdź piksele brzegowe markera
+  const boundary: Point[] = [];
+  const compSet = new Set(comp.map(p => p.y * width + p.x));
+  
+  for (const p of comp) {
+    const { x, y } = p;
+    // Sprawdzamy sąsiadów. Jeśli któryś leży poza maską `binary`, to jest to brzeg markera.
+    const isBoundary = 
+      x <= 0 || x >= width - 1 || y <= 0 || y >= height - 1 ||
+      binary[(y - 1) * width + x] === 0 ||
+      binary[(y + 1) * width + x] === 0 ||
+      binary[y * width + (x - 1)] === 0 ||
+      binary[y * width + (x + 1)] === 0;
+      
+    if (isBoundary) {
+      boundary.push(p);
+    }
+  }
+
+  // 3. Rozdziel piksele brzegowe na 4 krawędzie (Top, Right, Bottom, Left)
+  const edges: Point[][] = [[], [], [], []];
+  
+  for (const p of boundary) {
+    let minDist = Infinity;
+    let bestEdge = -1;
+    let bestProj = 0;
+
+    for (let i = 0; i < 4; i++) {
+      const p1 = rough[i];
+      const p2 = rough[(i + 1) % 4];
+      
+      const dx = p2.x - p1.x;
+      const dy = p2.y - p1.y;
+      const len2 = dx * dx + dy * dy;
+      if (len2 === 0) continue;
+      
+      const t = ((p.x - p1.x) * dx + (p.y - p1.y) * dy) / len2;
+      const projX = p1.x + t * dx;
+      const projY = p1.y + t * dy;
+      const dist = (p.x - projX) ** 2 + (p.y - projY) ** 2;
+      
+      if (dist < minDist) {
+        minDist = dist;
+        bestEdge = i;
+        bestProj = t;
+      }
+    }
+
+    // Używamy tylko pikseli z odległości < 25 (5px) od zgrubnej linii.
+    // ODRZUCAMY 20% krawędzi przy rogach (bestProj > 0.2 && < 0.8), by wyeliminować wpływ zaokrągleń soczewki!
+    if (bestEdge !== -1 && minDist < 25 && bestProj > 0.2 && bestProj < 0.8) {
+      edges[bestEdge].push(p);
+    }
+  }
+
+  // 4. Dopasowanie linii ortogonalnych (PCA / regresja najmniejszych kwadratów) do każdej krawędzi
+  const lines = edges.map(edgePts => {
+    if (edgePts.length < 5) return null; // Brak wystarczającej liczby pikseli na prostą
+
+    let cx = 0, cy = 0;
+    for (const p of edgePts) { cx += p.x; cy += p.y; }
+    cx /= edgePts.length;
+    cy /= edgePts.length;
+
+    let Ixx = 0, Iyy = 0, Ixy = 0;
+    for (const p of edgePts) {
+      const dx = p.x - cx;
+      const dy = p.y - cy;
+      Ixx += dx * dx;
+      Iyy += dy * dy;
+      Ixy += dx * dy;
+    }
+
+    // Kąt wariancji (Eigenvector dla smallest eigenvalue)
+    const theta = 0.5 * Math.atan2(2 * Ixy, Ixx - Iyy);
+    const vx = Math.cos(theta);
+    const vy = Math.sin(theta);
+    
+    const nx = -vy;
+    const ny = vx;
+    const d = nx * cx + ny * cy;
+    
+    return { nx, ny, d };
+  });
+
+  // 5. Krzyżowanie wyliczonych linii subpikselowych celem znalezienia absolutnych rogów
+  const trueCorners: Point[] = [];
+  for (let i = 0; i < 4; i++) {
+    const l1 = lines[i];
+    const l2 = lines[(i + 1) % 4];
+    
+    // Fallback: jeśli obiektyw całkowicie rozmył krawędź, używamy zgrubnego rogu
+    if (!l1 || !l2) {
+      trueCorners.push(rough[(i + 1) % 4]);
+      continue;
+    }
+    
+    const det = l1.nx * l2.ny - l1.ny * l2.nx;
+    if (Math.abs(det) < 1e-6) {
+      trueCorners.push(rough[(i + 1) % 4]);
+      continue;
+    }
+    
+    // Punkt przecięcia 2 prostych (Subpixel Corner)
+    const x = (l1.d * l2.ny - l2.d * l1.ny) / det;
+    const y = (l1.nx * l2.d - l2.nx * l1.d) / det;
+    trueCorners.push({ x, y });
+  }
+
+  // Zwracamy posortowane węzły
+  return [trueCorners[3], trueCorners[0], trueCorners[1], trueCorners[2]];
+}
+
+function getCornersFast(points: Point[]): [Point, Point, Point, Point] {
   // 1. Wylicz środek ciężkości markera
   let cx = 0, cy = 0;
   for (const p of points) {
@@ -340,8 +457,8 @@ export function detectArucoMarker(
         continue;
       }
 
-      // Oblicz precyzyjne narożniki z komponentu (omija skośne błędy BBoxa)
-      const compCorners = getCorners(comp);
+      // Oblicz precyzyjne narożniki z komponentu (Subpixel Edge Intersection)
+      const compCorners = getCorners(comp, binary, processWidth, processHeight);
       const corners: [Point, Point, Point, Point] = [
         { x: compCorners[0].x * scale, y: compCorners[0].y * scale },
         { x: compCorners[1].x * scale, y: compCorners[1].y * scale },

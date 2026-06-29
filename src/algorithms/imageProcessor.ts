@@ -94,6 +94,7 @@ export async function processClothingImage(
       markerFound,
       imageWidth: resizeResult.width,
       imageHeight: resizeResult.height,
+      arucoCorners: marker?.corners,
     };
   } catch (error) {
     console.error('[ImageProcessor] Błąd przetwarzania:', error);
