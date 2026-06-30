@@ -1,4 +1,4 @@
-# ADR 0014: Jedno źródło prawdy o przestrzeni współrzędnych (`useImageCoordinateSpace`) i redesign przepływu pomiaru
+# ADR 0011: Jedno źródło prawdy o przestrzeni współrzędnych (`useImageCoordinateSpace`) i redesign przepływu pomiaru
 
 > [!CAUTION]
 > Ten dokument rozszerza ADR 0010. ADR 0010 zdefiniował KTÓRA przestrzeń współrzędnych obowiązuje gdzie. Ten dokument definiuje JAK to jest wyliczane — w jednym miejscu, raz, i konsumowane wszędzie indziej. Powód: po wdrożeniu ADR 0010 trzy niezależne miejsca w `result.tsx` (hit-area `DraggablePoint`, transformacja lupy, grubość linii/tekstu SVG) zostały pominięte, bo każde z nich osobno liczyło skalę po swojemu zamiast czytać ją z jednego miejsca. Skutek: aplikacja stała się bezużyteczna (brak reakcji na dotyk, czarny ekran lupy, niewidoczne linie). Ten ADR istnieje żeby to się nie powtórzyło.
@@ -47,11 +47,17 @@ Obecny ekran `result.tsx` (jeden widok z 8-16 nakładającymi się punktami) zos
 2. **Pojedynczy pomiar, pełny ekran** — w danym momencie widoczna jest TYLKO jedna linia pomiarowa (np. tylko "Ramiona"), z dwoma dużymi uchwytami (patrz Decyzja C) i nazwą pomiaru wyświetloną czytelnie nad zdjęciem ("Przeciągnij oba punkty do krawędzi ramion"). Lupa aktywuje się automatycznie przy chwyceniu punktu.
 
    **Wartość w cm na środku linii pozostaje bez zmian względem obecnej implementacji** — to jest istniejący, działający mechanizm (`SvgText` z czarnym obrysem dla czytelności na każdym tle, aktualizowany w czasie rzeczywistym przy przeciąganiu punktu) i NIE jest usuwany ani zastępowany niczym innym. W trybie jednej-linii-na-raz ta wartość staje się jedynym elementem tekstowym na ekranie poza nazwą pomiaru, więc może być powiększona względem obecnego `fontSize="19"` dla jeszcze lepszej czytelności — ale musi pozostać w tym samym miejscu (środek linii) i w tej samej formie (cyfra + "cm", żywa aktualizacja). Brak tej wartości podczas przeciągania pozbawia użytkowniczkę natychmiastowego potwierdzenia czy ruch punktu daje sensowny wynik.
-3. **Automatyczne przejście** — po puszczeniu obu punktów danej linii (lub po naciśnięciu "Dalej"), przepływ przechodzi do kolejnego pomiaru z listy `GARMENT_CONFIG[garmentType]`. Możliwość cofnięcia do poprzedniego pomiaru.
-4. **Podsumowanie** — lista wszystkich zmierzonych wartości z możliwością dotknięcia dowolnej pozycji żeby wrócić i poprawić tylko tę jedną linię (nie cały przepływ od nowa).
-5. **Zapis/eksport** — bez zmian względem obecnej logiki `handleSave`/`handleShare`, poza tym że eksportowany obraz pokazuje wszystkie linie na raz (tak jak teraz) — redesign dotyczy WPROWADZANIA pomiarów, nie końcowego artefaktu.
 
-**Uzasadnienie:** to jest **redukcja powierzchni błędu**, nie tylko kosmetyka. Przy jednej widocznej linii na raz: hit-area nie konkuruje z 7 innymi punktami w bliskim sąsiedztwie, lupa nie musi dzielić uwagi między wieloma jednoczesnymi gestami, a błąd "złapałam nie ten punkt" staje się strukturalnie niemożliwy.
+3. **Nawigacja — swobodna, przez zakładki, nie liniowa.** Nad zdjęciem (lub pod nim — decyzja wizualna do Agenta w ramach instrukcji wykonawczej, byle czytelnie) renderowany jest poziomy pasek zakładek, jedna na każdy pomiar z `GARMENT_CONFIG[garmentType]`, plus jedna dodatkowa zakładka "+ Dowolny pomiar" (patrz niżej). Każda zakładka jest klikalna w dowolnym momencie — użytkowniczka może przeskoczyć z "Długości" prosto na "Talię" pomijając "Ramiona" i "Klatkę", bez przymusu przechodzenia przez wszystkie po kolei. Zakładka aktywna jest wizualnie wyróżniona (np. `bg-accent`/`border-accent` z palety projektu); zakładki już zmierzone (mają zapisaną wartość różną od stanu początkowego) dostają subtelny znacznik (np. ptaszek) żeby było widać postęp bez liczenia w głowie.
+
+   **Tryb "Dowolny pomiar"** — dodatkowa, zawsze dostępna opcja pozwalająca zmierzyć dowolny odcinek na zdjęciu, niezdefiniowany w `LINE_DEFS`/`GARMENT_CONFIG` (np. odległość między guzikami, długość zamka, szerokość kieszeni). Użytkowniczka stawia dwa punkty w dowolnym miejscu zdjęcia, dostaje wynik w cm tym samym mechanizmem (`getTrueDistance`), i opcjonalnie może nadać temu pomiarowi własną etykietę tekstową zanim trafi do podsumowania i eksportu. To nie jest zamiennik dla `GARMENT_CONFIG` — to dodatkowa, równoległa możliwość, bo z góry zdefiniowany zestaw pomiarów nigdy nie pokryje wszystkich przypadków które sprzedawczyni może chcieć udokumentować kupującej.
+
+4. **Podsumowanie** — lista wszystkich zmierzonych wartości (zarówno ze standardowych `LINE_DEFS` jak i dowolnych pomiarów dodanych ręcznie) z możliwością dotknięcia dowolnej pozycji żeby wrócić i poprawić tylko tę jedną linię.
+5. **Zapis/eksport** — bez zmian względem obecnej logiki `handleSave`/`handleShare`, poza tym że eksportowany obraz pokazuje wszystkie linie na raz (tak jak teraz, plus ewentualne dowolne pomiary) — redesign dotyczy WPROWADZANIA pomiarów, nie końcowego artefaktu.
+
+**Uzasadnienie redukcji do jednej linii naraz:** to jest **redukcja powierzchni błędu**, nie tylko kosmetyka. Przy jednej widocznej linii na raz: hit-area nie konkuruje z 7 innymi punktami w bliskim sąsiedztwie, lupa nie musi dzielić uwagi między wieloma jednoczesnymi gestami, a błąd "złapałam nie ten punkt" staje się strukturalnie niemożliwy.
+
+**Uzasadnienie nawigacji swobodnej zamiast liniowej:** użytkowniczki tej aplikacji (sprzedawczynie na Vinted) mają różne potrzeby zależnie od konkretnego ubrania i oczekiwań kupującej — wymuszanie sztywnej kolejności byłoby karą, nie pomocą. Swoboda wyboru i możliwość zmierzenia czegokolwiek, nie tylko z góry przewidzianej listy, jest częścią dobrego doświadczenia, nie odstępstwem od niego.
 
 ## Decyzja C — duże uchwyty dotykowe
 
@@ -61,15 +67,15 @@ Punkty pomiarowe (`DraggablePoint`) zwiększają hit-area z obecnych `44×44px` 
 
 Istniejący mechanizm zielonego `<Polygon>` rysowanego na `arucoCorners` (obrys wykrytego markera, widoczny na zdjęciu — patrz `result.tsx`, zarówno w głównym widoku jak i w `exportSvgRef`) jest jedynym sposobem, w jaki użytkowniczka może natychmiast zweryfikować "aplikacja poprawnie znalazła mój marker, mogę ufać skali pomiaru" zanim w ogóle zacznie przeciągać punkty. To jest sygnał zaufania do całego mechanizmu pomiarowego, nie kosmetyka.
 
-**Zasada bezwzględna:** w KAŻDYM kroku nowego przepływu (1. wybór typu ubrania, 2. pojedynczy pomiar, 3. podsumowanie) — wszędzie gdzie zdjęcie jest widoczne na ekranie — obrys markera ArUco musi pozostać narysowany, jeśli `currentResult.arucoCorners` istnieje. Nie chowamy go za przełącznikiem, nie usuwamy go z kroku 2 "żeby nie zaśmiecać ekranu jedną linią pomiaru" — wręcz przeciwnie, w kroku 2 (gdzie tylko jedna linia pomiarowa konkuruje o uwagę) obrys markera ma jeszcze WIĘCEJ przestrzeni wizualnej żeby być czytelnym niż w obecnym, zatłoczonym widoku z ośmioma liniami naraz.
+**Zasada bezwzględna:** w KAŻDYM kroku nowego przepływu (1. wybór typu ubrania, 2. pojedynczy pomiar, 3. dowolny pomiar, 4. podsumowanie) — wszędzie gdzie zdjęcie jest widoczne na ekranie — obrys markera ArUco musi pozostać narysowany, jeśli `currentResult.arucoCorners` istnieje. Nie chowamy go za przełącznikiem, nie usuwamy go z kroku 2 "żeby nie zaśmiecać ekranu jedną linią pomiaru" — wręcz przeciwnie, w kroku 2 (gdzie tylko jedna linia pomiarowa konkuruje o uwagę) obrys markera ma jeszcze WIĘCEJ przestrzeni wizualnej żeby być czytelnym niż w obecnym, zatłoczonym widoku z ośmioma liniami naraz.
 
 Istniejący badge `Skala: ArUco 10cm` / `Szacowanie` (oparty na `markerFound`) towarzyszy temu wizualnemu obrysowi i też zostaje — to dwa uzupełniające się sygnały (tekstowy i wizualny), nie nadmiarowe powtórzenie.
 
-
+## Co NIE wchodzi w zakres tego ADR
 
 - Zmiana logiki `getTrueDistance`, `applyHomography`, `getPerspectiveTransform` — ta matematyka jest już poprawna i przetestowana (patrz `__tests__/geometry.test.ts`), nie jest ruszana.
 - Zmiana formatu eksportu (`exportSvgRef`) poza naprawą grubości linii/tekstu do proporcji zgodnej z nową rozdzielczością (dług z Aneksu C, ADR 0010) — naprawiana przy okazji tej migracji, bo i tak dotykamy tych samych linii kodu.
-- Zmiana `GARMENT_CONFIG`, listy typów ubrań, ani definicji `LINE_DEFS` — struktura danych zostaje, zmienia się tylko SPOSÓB prezentacji i interakcji.
+- Zmiana `GARMENT_CONFIG`, listy typów ubrań, ani definicji `LINE_DEFS` — struktura danych zostaje, zmienia się tylko SPOSÓB prezentacji i interakcji (plus dodanie trybu dowolnego pomiaru z Decyzji B punkt 3, który żyje OBOK tej struktury, nie zastępuje jej).
 
 ## Status
 
