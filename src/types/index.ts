@@ -40,6 +40,14 @@ export interface MeasurementLine {
   color: string;
 }
 
+export interface CustomMeasurement {
+  id: string;
+  label: string;
+  p1: Point;
+  p2: Point;
+  color: string;
+}
+
 export interface GarmentMeasurements {
   garmentType: GarmentType;
   width: number;       // szerokość w cm (np. ramię do ramienia)
