@@ -618,7 +618,7 @@ export default function ResultScreen() {
             height={(imageHeight || 1600) + 70 + (measurements.length + customMeasurements.length) * 36}
             viewBox={`0 0 ${imageWidth || 1200} ${(imageHeight || 1600) + 70 + (measurements.length + customMeasurements.length) * 36}`}
             preserveAspectRatio="xMidYMid meet"
-            style={{ position: 'absolute', opacity: 0 }}
+            style={{ position: 'absolute' }}
           >
             <Rect x="0" y="0" width={imageWidth || 1200} height={(imageHeight || 1600) + 70 + (measurements.length + customMeasurements.length) * 36} fill="#111828" />
             

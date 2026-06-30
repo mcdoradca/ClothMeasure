@@ -92,3 +92,17 @@ Powiązany, niezależny błąd tej samej rundy: ukryte `<Svg ref={exportSvgRef}>
 **Zasada na przyszłość, analogiczna do reguł z ADR 0013:** każdy komponent renderowany dynamicznie w pętli lub warunkowo na podstawie zmiennego identyfikatora (tu: `activeLineId`) MUSI mieć `key` jednoznacznie powiązany z tym identyfikatorem, jeśli komponent przechowuje jakikolwiek stan lokalny (przez `useRef`, `useState`) który nie jest w pełni kontrolowany przez propsy z rodzica przy każdym renderze. Brak takiego klucza jest tej samej kategorii błędu co mieszanie `SCREEN_W` z `imageWidth` z ADR 0013 — coś co wygląda na drobny szczegół składniowy, a w praktyce cicho psuje dane bez rzucania wyjątku.
 
 Dodatkowo: elementy istniejące wyłącznie do efektu ubocznego poza ekranem (tu: ukryte SVG eksportu, `opacity: 0, top: -9999`) nie powinny być warunkowane przez `flowStep` ani żaden inny stan UI — powinny być renderowane bezwarunkowo przez cały czas życia ekranu, dokładnie tak jak były przed Etapem 3, niezależnie od tego, który krok przepływu jest aktualnie widoczny.
+
+## Uzupełnienie (2026-06-30) — Diagnostyka i rozwiązanie problemu "pustego" eksportu PNG
+
+Po pierwotnej naprawie polegającej na bezwarunkowym renderowaniu `<Svg ref={exportSvgRef}>` (zamiast powiązania z `flowStep === 'summary'`), testy na fizycznym telefonie wykazały, że wynikowy plik PNG nadal był całkowicie pusty wizualnie (biały ekran), chociaż posiadał poprawną wielkość (ok. 65 KB) i był technicznym, właściwym obrazem PNG w formacie base64. 
+
+Zamiast modyfikowania kodu na ślepo, przeprowadzono 5-rundową, ścisłą i dowodową diagnozę opartą na logach generowanych prosto z fizycznego telefonu:
+1. Potwierdzono, że warunek został usunięty na stałe.
+2. Dodano rygorystyczne przechwytywanie zdarzeń `toDataURL` i `FileSystem.writeAsStringAsync`, co obaliło hipotezę o "niedostatecznym czasie na asynchroniczne zdekodowanie `<SvgImage>`". Generowany obraz za każdym razem zrzucał strumień tekstowy base64 o długości niemal 90,000 znaków.
+3. Wykorzystano `FileSystem.getInfoAsync` dla potwierdzenia pomyślnego spisanego fizycznego rozmiaru (65,394 bajty).
+4. Przeniesiono punkt ciężkości poszukiwań z "błędu po stronie zapisywania" na "stan wizualny eksportowanego widoku".
+
+**Potwierdzona przyczyna błędu:** `<Svg ref={exportSvgRef}>` miało przypisany atrybut `style={{ position: 'absolute', opacity: 0 }}`. Było również owinięte tagiem nadrzędnym `<View style={{ position: 'absolute', top: -9999, left: -9999, zIndex: -10, opacity: 0 }}>`. Redundantne `opacity: 0` nadane bezpośrednio warstwie uchwyconej jako źródło dla obiektu natywnego w funkcji `.toDataURL()` powodowało renderowanie grafiki z zerową kanałową przepuszczalnością, która nakładała się na domyślnie białe ekrany podglądowe w aplikacjach-galeriach, dając iluzję zupełnie pustego, utraconego eksportu.
+
+**Wdrożone rozwiązanie i weryfikacja zasady:** Usunięto deklarację `opacity: 0` ze stylów inline na poziomie `<Svg>`, pozostawiając ciężar ukrycia widoku przed użytkownikiem WYŁĄCZNIE na głównym bloku kontenera `<View>`. Doprowadziło to do uwieczniania bezbłędnej grafiki z pełną paletą kolorów (wraz z ramką czarną i pełnym formatowaniem tabelarycznym) na 100% stopniu alfa. Udowadnia to absolutną regułę, żeby **najpierw zawężać objawy dowodami przez console.log (lub dedykowaną klasę typu SentinelLogger), a dopiero w dalszej kolejności testować celowane modyfikacje, nawet jeśli te modyfikacje wydają się logiczne na pierwszy rzut oka**.
