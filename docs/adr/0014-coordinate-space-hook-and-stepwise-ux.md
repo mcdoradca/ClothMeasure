@@ -1,11 +1,10 @@
-# ADR 0011: Jedno źródło prawdy o przestrzeni współrzędnych (`useImageCoordinateSpace`) i redesign przepływu pomiaru
+# ADR 0014: Jedno źródło prawdy o przestrzeni współrzędnych (`useImageCoordinateSpace`) i redesign przepływu pomiaru
 
 > [!CAUTION]
-> Ten dokument rozszerza ADR 0010. ADR 0010 zdefiniował KTÓRA przestrzeń współrzędnych obowiązuje gdzie. Ten dokument definiuje JAK to jest wyliczane — w jednym miejscu, raz, i konsumowane wszędzie indziej. Powód: po wdrożeniu ADR 0010 trzy niezależne miejsca w `result.tsx` (hit-area `DraggablePoint`, transformacja lupy, grubość linii/tekstu SVG) zostały pominięte, bo każde z nich osobno liczyło skalę po swojemu zamiast czytać ją z jednego miejsca. Skutek: aplikacja stała się bezużyteczna (brak reakcji na dotyk, czarny ekran lupy, niewidoczne linie). Ten ADR istnieje żeby to się nie powtórzyło.
-
+> Ten dokument rozszerza ADR 0013. ADR 0013 zdefiniował KTÓRA przestrzeń współrzędnych obowiązuje gdzie. Ten dokument definiuje JAK to jest wyliczane — w jednym miejscu, raz, i konsumowane wszędzie indziej. Powód: po wdrożeniu ADR 0013 trzy niezależne miejsca w `result.tsx` (hit-area `DraggablePoint`, transformacja lupy, grubość linii/tekstu SVG) zostały pominięte, bo każde z nich osobno liczyło skalę po swojemu zamiast czytać ją z jednego miejsca. Skutek: aplikacja stała się bezużyteczna (brak reakcji na dotyk, czarny ekran lupy, niewidoczne linie). Ten ADR istnieje żeby to się nie powtórzyło.
 ## Kontekst
 
-Po migracji na viewBox (ADR 0010) odkryto, że "przestrzeń obrazu" jako pojęcie nie wystarczy — potrzebny jest jeden, scentralizowany **mechanizm wyliczający** wszystkie pochodne tej przestrzeni (skalę, offsety, przeliczenia w obie strony), żeby żaden komponent nie mógł "wynaleźć" własnej, niespójnej wersji tej matematyki.
+Po migracji na viewBox (ADR 0013) odkryto, że "przestrzeń obrazu" jako pojęcie nie wystarczy — potrzebny jest jeden, scentralizowany **mechanizm wyliczający** wszystkie pochodne tej przestrzeni (skalę, offsety, przeliczenia w obie strony), żeby żaden komponent nie mógł "wynaleźć" własnej, niespójnej wersji tej matematyki.
 
 Dodatkowo: obecny UX pokazuje 8-16 punktów pomiarowych naraz na małym ekranie telefonu (patrz zrzut z 2026-06-30 — gęstwina nakładających się linii, kropek 8px, nieczytelnych etykiet). To utrudnia precyzyjne chwycenie właściwego punktu nawet gdy hit-area działa poprawnie. Grupa docelowa aplikacji (kobiety korzystające z telefonu jedną ręką, zastępujące ręczną miarkę krawiecką przy sprzedaży na Vinted) wymaga przepływu który jest prowadzony krok po kroku, nie wymaga precyzji chirurgicznej, i nie karze za pomyłkę.
 
