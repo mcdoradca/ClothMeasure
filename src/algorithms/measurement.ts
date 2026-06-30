@@ -3,7 +3,7 @@
 // px → cm z korekcją perspektywy
 // =========================================
 
-import { ArucoMarker, GarmentMeasurements, GarmentType, MeasurementLine, Point } from '../types';
+import { ArucoMarker, GarmentMeasurements, GarmentType, MeasurementLine, Point, MarkerType } from '../types';
 import { measureWidthAtY } from './edgeDetection';
 
 import { getPerspectiveTransform } from './perspective';
@@ -26,21 +26,46 @@ export interface MeasurementContext {
  * Oblicz skalę px/cm na podstawie wykrytego markera ArUco
  * Marker jest drukowany jako 10x10 cm
  */
-export function calculatePixelPerCm(marker: ArucoMarker): MeasurementContext {
-  // Średnia długość boku markera w px
+export function calculatePixelPerCm(marker: ArucoMarker, markerType: MarkerType): MeasurementContext {
+  // Średnia długość boku markera w px z 4 boków, czyli (obwódPx / 4)
   const markerSidePx = marker.sidePixels;
 
-  // Marker referencyjny = 10 cm
-  const MARKER_SIZE_CM = 10;
+  // Perimeter (Obwód)
+  // ArUco: 10 + 10 + 10 + 10 = 40 cm
+  // Card: 8.56 + 5.40 + 8.56 + 5.40 = 27.92 cm
+  const perimeterCm = markerType === 'card' ? 27.92 : 40;
+  
+  // pixelPerCm na podstawie całego obwodu (odporność na zniekształcenia perspektywy boków)
+  const pixelPerCm = (markerSidePx * 4) / perimeterCm;
 
-  const pixelPerCm = markerSidePx / MARKER_SIZE_CM;
+  // dst corners w CM! (Homografia dla karty wymaga orientacji proporcji)
+  let MARKER_W = 10;
+  let MARKER_H = 10;
 
-  // dst corners for a perfect 10x10 cm square (w CM!)
+  if (markerType === 'card') {
+    // Sprawdzamy orientację karty na zdjęciu (czy leży poziomo czy pionowo)
+    const dx1 = marker.corners[0].x - marker.corners[1].x;
+    const dy1 = marker.corners[0].y - marker.corners[1].y;
+    const s1 = Math.sqrt(dx1 * dx1 + dy1 * dy1); // Szerokość (góra)
+    
+    const dx2 = marker.corners[1].x - marker.corners[2].x;
+    const dy2 = marker.corners[1].y - marker.corners[2].y;
+    const s2 = Math.sqrt(dx2 * dx2 + dy2 * dy2); // Wysokość (prawy bok)
+
+    if (s1 > s2) {
+      MARKER_W = 8.56;
+      MARKER_H = 5.40;
+    } else {
+      MARKER_W = 5.40;
+      MARKER_H = 8.56;
+    }
+  }
+  
   const dst: Point[] = [
     { x: 0, y: 0 },
-    { x: MARKER_SIZE_CM, y: 0 },
-    { x: MARKER_SIZE_CM, y: MARKER_SIZE_CM },
-    { x: 0, y: MARKER_SIZE_CM },
+    { x: MARKER_W, y: 0 },
+    { x: MARKER_W, y: MARKER_H },
+    { x: 0, y: MARKER_H },
   ];
 
   const homographyMatrix = getPerspectiveTransform(marker.corners, dst) || undefined;
@@ -48,7 +73,7 @@ export function calculatePixelPerCm(marker: ArucoMarker): MeasurementContext {
   return {
     pixelPerCm,
     homographyMatrix,
-    referenceType: 'aruco',
+    referenceType: markerType === 'card' ? 'credit_card' : 'aruco',
     confidence: markerSidePx > 100 ? 1.0 : markerSidePx > 50 ? 0.8 : 0.6,
   };
 }

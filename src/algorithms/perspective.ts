@@ -4,24 +4,80 @@
 
 import { Point } from '../types';
 
+function normalizePoints(points: Point[]): { normalized: Point[], T: number[][] } {
+  let cx = 0, cy = 0;
+  for (const p of points) {
+    cx += p.x; cy += p.y;
+  }
+  cx /= points.length;
+  cy /= points.length;
+
+  let meanDist = 0;
+  for (const p of points) {
+    meanDist += Math.sqrt((p.x - cx)**2 + (p.y - cy)**2);
+  }
+  meanDist /= points.length;
+
+  const scale = Math.sqrt(2) / (meanDist === 0 ? 1 : meanDist);
+
+  const normalized = points.map(p => ({
+    x: (p.x - cx) * scale,
+    y: (p.y - cy) * scale,
+  }));
+
+  const T = [
+    [scale, 0, -scale * cx],
+    [0, scale, -scale * cy],
+    [0, 0, 1]
+  ];
+
+  return { normalized, T };
+}
+
+function multiply3x3(a: number[][], b: number[][]): number[][] {
+  const result = [[0,0,0],[0,0,0],[0,0,0]];
+  for (let r = 0; r < 3; r++) {
+    for (let c = 0; c < 3; c++) {
+      for (let k = 0; k < 3; k++) {
+        result[r][c] += a[r][k] * b[k][c];
+      }
+    }
+  }
+  return result;
+}
+
+function inverse3x3(m: number[][]): number[][] {
+  const det = m[0][0]*(m[1][1]*m[2][2] - m[2][1]*m[1][2]) -
+              m[0][1]*(m[1][0]*m[2][2] - m[1][2]*m[2][0]) +
+              m[0][2]*(m[1][0]*m[2][1] - m[1][1]*m[2][0]);
+  if (Math.abs(det) < 1e-12) return [[1,0,0],[0,1,0],[0,0,1]];
+  const invdet = 1/det;
+  return [
+    [ (m[1][1]*m[2][2] - m[2][1]*m[1][2])*invdet, (m[0][2]*m[2][1] - m[0][1]*m[2][2])*invdet, (m[0][1]*m[1][2] - m[0][2]*m[1][1])*invdet ],
+    [ (m[1][2]*m[2][0] - m[1][0]*m[2][2])*invdet, (m[0][0]*m[2][2] - m[0][2]*m[2][0])*invdet, (m[1][0]*m[0][2] - m[0][0]*m[1][2])*invdet ],
+    [ (m[1][0]*m[2][1] - m[2][0]*m[1][1])*invdet, (m[2][0]*m[0][1] - m[0][0]*m[2][1])*invdet, (m[0][0]*m[1][1] - m[1][0]*m[0][1])*invdet ]
+  ];
+}
+
 /**
- * Oblicza macierz homografii 3x3 na podstawie 4 par punktów bazując na 
- * Direct Linear Transformation (DLT).
- * Odpowiednik: cv2.getPerspectiveTransform(src, dst)
+ * Oblicza znormalizowaną macierz homografii (Hartley's Normalization + DLT).
  */
 export function getPerspectiveTransform(src: Point[], dst: Point[]): number[] | null {
   if (src.length !== 4 || dst.length !== 4) return null;
 
+  const srcNorm = normalizePoints(src);
+  const dstNorm = normalizePoints(dst);
+
   const a: number[][] = [];
   for (let i = 0; i < 4; i++) {
-    const { x, y } = src[i];
-    const u = dst[i].x;
-    const v = dst[i].y;
+    const { x, y } = srcNorm.normalized[i];
+    const u = dstNorm.normalized[i].x;
+    const v = dstNorm.normalized[i].y;
     a.push([x, y, 1, 0, 0, 0, -u * x, -u * y, u]);
     a.push([0, 0, 0, x, y, 1, -v * x, -v * y, v]);
   }
 
-  // Eliminacja Gaussa na macierzy 8x9
+  // Eliminacja Gaussa
   for (let col = 0; col < 8; col++) {
     let max = col;
     for (let row = col + 1; row < 8; row++) {
@@ -29,13 +85,11 @@ export function getPerspectiveTransform(src: Point[], dst: Point[]): number[] | 
         max = row;
       }
     }
-
     const tmp = a[col];
     a[col] = a[max];
     a[max] = tmp;
 
-    // Jeżeli oś jest bliska zera, macierz osobliwa
-    if (Math.abs(a[col][col]) < 1e-10) {
+    if (Math.abs(a[col][col]) < 1e-12) {
       return null;
     }
 
@@ -56,8 +110,31 @@ export function getPerspectiveTransform(src: Point[], dst: Point[]): number[] | 
     h[row] = sum / a[row][row];
   }
 
-  // Wypełniamy macierz h 9 elementem h33 = 1
-  return [...h, 1];
+  const H_norm = [
+    [h[0], h[1], h[2]],
+    [h[3], h[4], h[5]],
+    [h[6], h[7], h[8], 1]
+  ];
+  H_norm[2][2] = 1;
+
+  const T_dst_inv = inverse3x3(dstNorm.T);
+  const M1 = multiply3x3(T_dst_inv, H_norm);
+  const H_final = multiply3x3(M1, srcNorm.T);
+
+  const w = H_final[2][2];
+  if (Math.abs(w) > 1e-12) {
+    return [
+      H_final[0][0]/w, H_final[0][1]/w, H_final[0][2]/w,
+      H_final[1][0]/w, H_final[1][1]/w, H_final[1][2]/w,
+      H_final[2][0]/w, H_final[2][1]/w, 1
+    ];
+  } else {
+    return [
+      H_final[0][0], H_final[0][1], H_final[0][2],
+      H_final[1][0], H_final[1][1], H_final[1][2],
+      H_final[2][0], H_final[2][1], H_final[2][2]
+    ];
+  }
 }
 
 /**

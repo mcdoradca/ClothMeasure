@@ -24,11 +24,40 @@ export default function CameraScreen() {
   const [facing, setFacing] = useState<CameraType>('back');
   const [flash, setFlash] = useState<'off' | 'on'>('off');
   const [isCapturing, setIsCapturing] = useState(false);
+  const [zoom, setZoom] = useState(0);
   const cameraRef = useRef<CameraView>(null);
   const setCapturedImageUri = useMeasurementStore((s) => s.setCapturedImageUri);
 
   // Animacja migawki
   const flashAnim = useRef(new Animated.Value(0)).current;
+
+  // Zoom Gesture State
+  const baseZoom = useRef(0);
+  const baseDistance = useRef(0);
+
+  const calculateDistance = (touches: any[]) => {
+    const dx = touches[0].pageX - touches[1].pageX;
+    const dy = touches[0].pageY - touches[1].pageY;
+    return Math.sqrt(dx * dx + dy * dy);
+  };
+
+  const onTouchStart = (e: any) => {
+    if (e.nativeEvent.touches.length === 2) {
+      baseDistance.current = calculateDistance(e.nativeEvent.touches);
+      baseZoom.current = zoom;
+    }
+  };
+
+  const onTouchMove = (e: any) => {
+    if (e.nativeEvent.touches.length === 2) {
+      const distance = calculateDistance(e.nativeEvent.touches);
+      const scale = distance / baseDistance.current;
+      let newZoom = baseZoom.current + (scale - 1) * 0.05; 
+      if (newZoom < 0) newZoom = 0;
+      if (newZoom > 1) newZoom = 1;
+      setZoom(newZoom);
+    }
+  };
 
   const handleCapture = async () => {
     if (!cameraRef.current || isCapturing) return;
@@ -126,11 +155,17 @@ export default function CameraScreen() {
         style={StyleSheet.absoluteFill}
         facing={facing}
         flash={flash}
-        zoom={0}
+        zoom={zoom}
       />
       
       {/* UI Overlay */}
-      <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+      <View 
+        style={StyleSheet.absoluteFill} 
+        pointerEvents="box-none"
+        onStartShouldSetResponder={() => true}
+        onResponderGrant={onTouchStart}
+        onResponderMove={onTouchMove}
+      >
         {/* Migawka overlay */}
         <Animated.View
           style={[styles.flashOverlay, { opacity: flashAnim }]}

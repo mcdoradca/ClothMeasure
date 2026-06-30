@@ -30,9 +30,9 @@ const STEPS = [
   {
     num: '03',
     icon: '🎯',
-    title: 'Umieść marker obok ubrania',
-    desc: 'Połóż wydrukowany marker ArUco obok ubrania, na tej samej płaszczyźnie. Marker musi być w tym samym kadrze co ubranie i na tej samej wysokości (nie na ubraniu!).',
-    tip: 'Marker NIE może leżeć na ubraniu — musi być w tej samej płaszczyźnie co powierzchnia pod ubraniem.',
+    title: 'Umieść wzorzec kalibracyjny',
+    desc: 'Połóż wydrukowany marker ArUco (lub kartę) obok ubrania na tej samej płaszczyźnie, albo bezpośrednio na ubraniu. Ważne, by leżał możliwie płasko i był w całości widoczny.',
+    tip: 'Marker może leżeć obok lub na ubraniu. Unikaj zagięć materiału pod nim.',
     tipType: 'warning',
   },
   {
@@ -47,8 +47,8 @@ const STEPS = [
     num: '05',
     icon: '📐',
     title: 'Aplikacja mierzy automatycznie',
-    desc: 'Aplikacja wykrywa marker → oblicza skalę → wykrywa kontur ubrania → nanosi pomiary. Cały proces trwa 1–3 sekundy.',
-    tip: 'Wyniki są dokładne do ±1 cm przy prawidłowym oświetleniu i braku perspektywy.',
+    desc: 'System wykrywa marker lub kartę → przelicza skalę i perspektywę przestrzeni → przetwarza wymiary. Cały proces detekcji wzorca przebiega automatycznie w ułamku sekundy.',
+    tip: 'Dbaj o dobre oświetlenie, aby wzorzec (marker/karta) wyraźnie odcinał się od tła.',
     tipType: 'tip',
   },
 ];
@@ -60,7 +60,7 @@ const FAQ = [
   },
   {
     q: 'Co jeśli nie mam drukarki?',
-    a: 'Możesz użyć karty kredytowej (8,56 × 5,4 cm) jako alternatywy. W takim przypadku wybierz tryb "Karta kredytowa" w ustawieniach aplikacji.',
+    a: 'W ustawieniach na ekranie głównym możesz włączyć tryb "Karta Kredytowa" (8,56 × 5,4 cm). Najlepiej użyć strony bez tłoczonych danych i wzorów (pustej) lub specjalnej "karty z pakietu Premium", aby ułatwić detekcję wizyjną gładkiego prostokąta.',
   },
   {
     q: 'Dlaczego pomiary są niedokładne?',

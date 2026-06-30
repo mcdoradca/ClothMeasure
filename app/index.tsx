@@ -20,6 +20,8 @@ const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
 export default function HomeScreen() {
   const history = useMeasurementStore((s) => s.history);
+  const markerType = useMeasurementStore((s) => s.markerType);
+  const setMarkerType = useMeasurementStore((s) => s.setMarkerType);
 
   // Animacje
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -150,6 +152,29 @@ export default function HomeScreen() {
             desc="6 kategorii"
             color="#C77DFF"
           />
+        </Animated.View>
+
+        {/* Ustawienia Kalibracji */}
+        <Animated.View style={[styles.settingsSection, { opacity: fadeAnim }]}>
+          <Text style={styles.sectionTitle}>Metoda kalibracji</Text>
+          <View style={styles.segmentedControl}>
+            <TouchableOpacity
+              style={[styles.segmentBtn, markerType === 'aruco' && styles.segmentBtnActive]}
+              onPress={() => setMarkerType('aruco')}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="qr-code-outline" size={16} color={markerType === 'aruco' ? '#0A0A1A' : '#8899AA'} />
+              <Text style={[styles.segmentText, markerType === 'aruco' && styles.segmentTextActive]}>Wydruk ArUco</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.segmentBtn, markerType === 'card' && styles.segmentBtnActive]}
+              onPress={() => setMarkerType('card')}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="card-outline" size={16} color={markerType === 'card' ? '#0A0A1A' : '#8899AA'} />
+              <Text style={[styles.segmentText, markerType === 'card' && styles.segmentTextActive]}>Karta 8.56x5.4</Text>
+            </TouchableOpacity>
+          </View>
         </Animated.View>
 
         {/* Ostatnie pomiary */}
@@ -322,6 +347,38 @@ const styles = StyleSheet.create({
   },
   historySection: {
     marginBottom: 24,
+  },
+  settingsSection: {
+    marginBottom: 32,
+  },
+  segmentedControl: {
+    flexDirection: 'row',
+    backgroundColor: '#111828',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#1E2A3A',
+    padding: 4,
+    marginTop: 12,
+  },
+  segmentBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    gap: 8,
+    borderRadius: 8,
+  },
+  segmentBtnActive: {
+    backgroundColor: '#00E5FF',
+  },
+  segmentText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#8899AA',
+  },
+  segmentTextActive: {
+    color: '#0A0A1A',
   },
   sectionHeader: {
     flexDirection: 'row',

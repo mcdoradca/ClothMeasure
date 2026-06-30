@@ -5,7 +5,7 @@
 
 import * as FileSystem from 'expo-file-system/legacy';
 import * as ImageManipulator from 'expo-image-manipulator';
-import { ProcessingResult } from '../types';
+import { ProcessingResult, MarkerType } from '../types';
 import { detectArucoMarker } from './arucoDetector';
 import {
   calculatePixelPerCm,
@@ -21,6 +21,7 @@ const MAX_PROCESS_WIDTH = 1200; // px — balans jakość/wydajność
  */
 export async function processClothingImage(
   imageUri: string,
+  markerType: MarkerType,
   onProgress?: (step: string, percent: number) => void
 ): Promise<ProcessingResult> {
   const startTime = Date.now();
@@ -59,12 +60,12 @@ export async function processClothingImage(
 
     onProgress?.('Szukam markera kalibracyjnego…', 35);
 
-    // 3. Detekcja markera ArUco
-    const marker = detectArucoMarker(pixelData, procWidth, procHeight);
+    // 3. Detekcja markera kalibracyjnego (ArUco lub Karta)
+    const marker = detectArucoMarker(pixelData, procWidth, procHeight, markerType);
     const markerFound = marker !== null;
 
     const measurementContext = markerFound
-      ? calculatePixelPerCm(marker!)
+      ? calculatePixelPerCm(marker!, markerType)
       : estimatePixelPerCmFromImageSize(procWidth, procHeight);
 
     onProgress?.('Inicjalizacja środowiska manualnego…', 85);

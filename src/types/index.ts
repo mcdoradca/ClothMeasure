@@ -12,6 +12,8 @@ export type GarmentType =
   | 'skirt'
   | 'unknown';
 
+export type MarkerType = 'aruco' | 'card';
+
 export interface Point {
   x: number;
   y: number;

@@ -29,6 +29,7 @@ export default function ProcessingScreen() {
   const setProcessingProgress = useMeasurementStore((s) => s.setProcessingProgress);
   const processingProgress = useMeasurementStore((s) => s.processingProgress);
   const processingStep = useMeasurementStore((s) => s.processingStep);
+  const markerType = useMeasurementStore((s) => s.markerType);
 
   const rotateAnim = useRef(new Animated.Value(0)).current;
   const progressAnim = useRef(new Animated.Value(0)).current;
@@ -81,6 +82,7 @@ export default function ProcessingScreen() {
     try {
       const result = await processClothingImage(
         capturedImageUri,
+        markerType,
         (step, percent) => {
           setProcessingProgress(percent, step);
         }

@@ -3,7 +3,7 @@
 // =========================================
 
 import { create } from 'zustand';
-import { HistoryEntry, ProcessingResult } from '../types';
+import { HistoryEntry, ProcessingResult, MarkerType } from '../types';
 import * as FileSystem from 'expo-file-system/legacy';
 import { SentinelLogger } from '../utils/logger';
 
@@ -15,6 +15,8 @@ interface MeasurementState {
   history: HistoryEntry[];
   processingProgress: number;
   processingStep: string;
+  markerType: MarkerType;
+  setMarkerType: (type: MarkerType) => void;
   setCapturedImageUri: (uri: string | null) => void;
   setCurrentResult: (res: ProcessingResult | null) => void;
   setProcessingProgress: (progress: number, step: string) => void;
@@ -30,7 +32,9 @@ export const useMeasurementStore = create<MeasurementState>((set, get) => ({
   history: [],
   processingProgress: 0,
   processingStep: '',
+  markerType: 'aruco',
 
+  setMarkerType: (type) => set({ markerType: type }),
   setCapturedImageUri: (uri) => set({ capturedImageUri: uri }),
   setCurrentResult: (res) => set({ currentResult: res }),
   setProcessingProgress: (progress, step) => set({ processingProgress: progress, processingStep: step }),

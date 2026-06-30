@@ -4,7 +4,7 @@
 // Kompatybilna z React Native (brak DOM dependency)
 // =========================================
 
-import { ArucoMarker, Point } from '../types';
+import { ArucoMarker, Point, MarkerType } from '../types';
 import { SentinelLogger } from '../utils/logger';
 
 // ArUco słownik 4x4 (50 markerów) — zakodowane wzory bitowe
@@ -384,7 +384,8 @@ function distance(p1: Point, p2: Point): number {
 export function detectArucoMarker(
   pixelData: Uint8ClampedArray,
   imageWidth: number,
-  imageHeight: number
+  imageHeight: number,
+  markerType: MarkerType = 'aruco'
 ): ArucoMarker | null {
   try {
     // 1. Skalowanie do max 1200px dla wydajności przy zachowaniu detali Aruco
@@ -421,40 +422,56 @@ export function detectArucoMarker(
       // Zaloguj tylko większe komponenty (żeby nie zaspamować logów śmieciami)
       const isBigEnoughToLog = w > processWidth * 0.05;
 
-      if (!isSquarish(minX, minY, maxX, maxY)) {
-        if (isBigEnoughToLog) console.log(`[ArUco Reject] W: ${w}, H: ${h} -> Not squarish`);
-        continue;
+      if (markerType === 'aruco') {
+        if (!isSquarish(minX, minY, maxX, maxY)) {
+          if (isBigEnoughToLog) console.log(`[ArUco Reject] W: ${w}, H: ${h} -> Not squarish`);
+          continue;
+        }
+      } else {
+        // Tryb 'card' - karta ma wymiary 8.56x5.4 cm (ratio = 1.58).
+        // Jednak obrócona pod kątem 45 stopni daje niemal kwadratowy Bounding Box.
+        // Dlatego przepuszczamy ratio od 1.0 do 2.5
+        const ratio = Math.max(w, h) / Math.min(w, h);
+        if (ratio < 1.0 || ratio > 2.5) {
+          if (isBigEnoughToLog) console.log(`[Card Reject] Ratio ${ratio.toFixed(2)} -> Not a card shape`);
+          continue;
+        }
       }
 
       // Marker powinien zajmować minimum 3% i max 60% szerokości obrazu
       if (w < processWidth * 0.03 || w > processWidth * 0.6) {
-        if (isBigEnoughToLog) console.log(`[ArUco Reject] W: ${w} -> Out of size bounds (3%-60%)`);
+        if (isBigEnoughToLog) console.log(`[Reject] W: ${w} -> Out of size bounds (3%-60%)`);
         continue;
       }
 
-      // Sprawdź wypełnienie — marker ArUco ma w środku białe piksele i nie jest litym blokiem.
-      // Dodatkowo obrót z perspektywy zwiększa pole bounding boxa (białe trójkąty w rogach).
-      // Klasyczny marker ma fill ratio w granicach 0.15 - 0.25 (podbito z 0.08)
       const bbox_area = w * h;
       const fill_ratio = comp.length / bbox_area;
-      if (fill_ratio < 0.15) {
-        if (isBigEnoughToLog) console.log(`[ArUco Reject] W: ${w}, H: ${h} -> Fill ratio too low: ${fill_ratio.toFixed(2)}`);
-        continue; // rygorystyczne odrzucanie pajęczyn i splotów swetra
-      }
 
-      // Sprawdź czy obszar wewnątrz ma wzór czarnej ramki (border)
-      // Próg znacznie obniżony, bo bbox przy perspektywie pokrywa dużo białego tła
-      const borderOk = checkSolidBorder(binary, processWidth, minX, minY, maxX, maxY);
-      if (!borderOk) {
-        if (isBigEnoughToLog) console.log(`[ArUco Reject] BorderGuard W: ${w}, H: ${h} -> rejected`);
-        continue;
-      }
+      if (markerType === 'aruco') {
+        // Klasyczny marker ma fill ratio w granicach 0.15 - 0.25
+        if (fill_ratio < 0.15) {
+          if (isBigEnoughToLog) console.log(`[ArUco Reject] W: ${w}, H: ${h} -> Fill ratio too low: ${fill_ratio.toFixed(2)}`);
+          continue;
+        }
 
-      // Strażnik Wewnętrznej Wariancji (Odcięcie False Positives na gładkich tkaninach)
-      const varianceOk = checkInnerVariance(binary, processWidth, minX, minY, maxX, maxY);
-      if (!varianceOk) {
-        if (isBigEnoughToLog) console.log(`[ArUco Reject] VarianceGuard W: ${w}, H: ${h} -> rejected (smooth surface)`);
-        continue;
+        const borderOk = checkSolidBorder(binary, processWidth, minX, minY, maxX, maxY);
+        if (!borderOk) {
+          if (isBigEnoughToLog) console.log(`[ArUco Reject] BorderGuard W: ${w}, H: ${h} -> rejected`);
+          continue;
+        }
+
+        const varianceOk = checkInnerVariance(binary, processWidth, minX, minY, maxX, maxY);
+        if (!varianceOk) {
+          if (isBigEnoughToLog) console.log(`[ArUco Reject] VarianceGuard W: ${w}, H: ${h} -> rejected (smooth surface)`);
+          continue;
+        }
+      } else {
+        // Tryb 'card' - Karta to pełny prostokąt. Ale jeśli jest obrócona o 45 stopni,
+        // jej Bounding Box jest ponad dwukrotnie większy, przez co fill_ratio spada do ~0.45!
+        if (fill_ratio < 0.35) {
+          if (isBigEnoughToLog) console.log(`[Card Reject] W: ${w}, H: ${h} -> Fill ratio too low for card: ${fill_ratio.toFixed(2)}`);
+          continue; 
+        }
       }
 
       // Oblicz precyzyjne narożniki z komponentu (Subpixel Edge Intersection)
@@ -475,11 +492,14 @@ export function detectArucoMarker(
       console.log('[ArUco] Kandydat:', w, 'x', h, 'px, fill:', (fill_ratio * 100).toFixed(0) + '%',
         '| pos:', minX, minY, '| sidePixels:', sidePixels);
 
+      // ARUCO RE-WRITE: 
+      // Zapisujemy Fill Ratio (Gęstość pikseli ArUco to solidny, gruby obrys wewnątrz 10x10)
       markerCandidates.push({
         id: 1,
         corners,
         sidePixels,
-      });
+        fillRatio: fill_ratio,
+      } as any);
     }
 
     if (markerCandidates.length === 0) {

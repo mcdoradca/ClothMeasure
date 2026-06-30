@@ -73,12 +73,14 @@ function DraggablePoint({
   id,
   initialX,
   initialY,
+  scale,
   onMove,
   onActive,
 }: {
   id: string;
   initialX: number;
   initialY: number;
+  scale: number;
   onMove: (x: number, y: number) => void;
   onActive: (active: boolean, x: number, y: number) => void;
 }) {
@@ -94,19 +96,22 @@ function DraggablePoint({
         onActive(true, currPos.current.x, currPos.current.y);
       },
       onPanResponderMove: (e, gesture) => {
-        const newX = startPos.current.x + gesture.dx;
-        const newY = startPos.current.y + gesture.dy;
+        const newX = startPos.current.x + gesture.dx * scale;
+        const newY = startPos.current.y + gesture.dy * scale;
         onActive(true, newX, newY);
         onMove(newX, newY);
       },
       onPanResponderRelease: (e, gesture) => {
-        const newX = startPos.current.x + gesture.dx;
-        const newY = startPos.current.y + gesture.dy;
+        const newX = startPos.current.x + gesture.dx * scale;
+        const newY = startPos.current.y + gesture.dy * scale;
         onActive(false, newX, newY);
         onMove(newX, newY);
       },
     })
   ).current;
+
+  const displayX = initialX / scale;
+  const displayY = initialY / scale;
 
   return (
     <View
@@ -114,8 +119,8 @@ function DraggablePoint({
       style={[
         styles.draggablePoint,
         {
-          left: initialX,
-          top: initialY,
+          left: displayX,
+          top: displayY,
           backgroundColor: 'transparent',
           borderWidth: 0,
         },
@@ -134,22 +139,21 @@ export default function ResultScreen() {
   const W = SCREEN_W;
   const H = IMAGE_HEIGHT;
 
+  const [containerSize, setContainerSize] = useState<{ width: number; height: number }>({ width: SCREEN_W, height: IMAGE_HEIGHT });
   const [pts, setPts] = useState<Record<string, { x: number; y: number }>>({
-    sl: { x: W * 0.25, y: H * 0.25 }, sr: { x: W * 0.75, y: H * 0.25 },
-    cl: { x: W * 0.20, y: H * 0.40 }, cr: { x: W * 0.80, y: H * 0.40 },
-    wl: { x: W * 0.22, y: H * 0.65 }, wr: { x: W * 0.78, y: H * 0.65 },
-    lt: { x: W * 0.5, y: H * 0.15 }, lb: { x: W * 0.5, y: H * 0.85 },
-    so_t: { x: W * 0.25, y: H * 0.25 }, so_b: { x: W * 0.1, y: H * 0.5 },
-    si_t: { x: W * 0.20, y: H * 0.40 }, si_b: { x: W * 0.15, y: H * 0.45 },
-    rise_t: { x: W * 0.5, y: H * 0.15 }, rise_b: { x: W * 0.5, y: H * 0.45 },
-    lo_t: { x: W * 0.2, y: H * 0.15 }, lo_b: { x: W * 0.2, y: H * 0.85 },
-    li_t: { x: W * 0.4, y: H * 0.45 }, li_b: { x: W * 0.4, y: H * 0.85 },
+    sl: { x: (1200) * 0.25, y: (1600) * 0.25 }, sr: { x: (1200) * 0.75, y: (1600) * 0.25 },
+    cl: { x: (1200) * 0.20, y: (1600) * 0.40 }, cr: { x: (1200) * 0.80, y: (1600) * 0.40 },
+    wl: { x: (1200) * 0.22, y: (1600) * 0.65 }, wr: { x: (1200) * 0.78, y: (1600) * 0.65 },
+    lt: { x: (1200) * 0.5,  y: (1600) * 0.15 }, lb: { x: (1200) * 0.5,  y: (1600) * 0.85 },
+    so_t: { x: (1200) * 0.25, y: (1600) * 0.25 }, so_b: { x: (1200) * 0.1, y: (1600) * 0.5 },
+    si_t: { x: (1200) * 0.20, y: (1600) * 0.40 }, si_b: { x: (1200) * 0.15, y: (1600) * 0.45 },
+    rise_t: { x: (1200) * 0.5, y: (1600) * 0.15 }, rise_b: { x: (1200) * 0.5, y: (1600) * 0.45 },
+    lo_t: { x: (1200) * 0.2, y: (1600) * 0.15 }, lo_b: { x: (1200) * 0.2, y: (1600) * 0.85 },
+    li_t: { x: (1200) * 0.4, y: (1600) * 0.45 }, li_b: { x: (1200) * 0.4, y: (1600) * 0.85 },
   });
 
   const [garmentType, setGarmentType] = useState<keyof typeof GARMENT_CONFIG>('tshirt');
   const [symmetryLocked, setSymmetryLocked] = useState(false);
-
-  const [imageLayoutSize, setImageLayoutSize] = useState<{ width: number; height: number } | null>(null);
   const [activePoint, setActivePoint] = useState<{ x: number; y: number } | null>(null);
 
   if (!currentResult) {
@@ -165,51 +169,54 @@ export default function ResultScreen() {
 
   const { imageUri, markerFound, pixelPerCm, homographyMatrix, imageWidth, imageHeight } = currentResult;
 
-  // --- Viewport Mapping (DRY) ---
-  const imgW = imageWidth || 1200;
-  const imgH = imageHeight || 1600;
-  const viewW = imageLayoutSize?.width ?? SCREEN_W;
-  const viewH = imageLayoutSize?.height ?? IMAGE_HEIGHT;
-  
-  const imgAspect = imgW / imgH;
-  const viewAspect = viewW / viewH;
+  const screenToImageSpace = (screenX: number, screenY: number) => {
+    const imgW = imageWidth || 1200;
+    const imgH = imageHeight || 1600;
+    const imgAspect = imgW / imgH;
+    const viewAspect = containerSize.width / containerSize.height;
 
-  let renderedW = viewW, renderedH = viewH, offsetX = 0, offsetY = 0;
-  if (imgAspect > viewAspect) {
-    renderedH = viewW / imgAspect;
-    offsetY = (viewH - renderedH) / 2;
-  } else {
-    renderedW = viewH * imgAspect;
-    offsetX = (viewW - renderedW) / 2;
-  }
-  const scaleToOriginal = imgW / renderedW;
-  const scaleToView = renderedW / imgW;
+    let renderedW: number, renderedH: number, offsetX: number, offsetY: number;
 
-  const mapScreenToOriginal = (p: {x: number, y: number}) => ({
-    x: (p.x - offsetX) * scaleToOriginal,
-    y: (p.y - offsetY) * scaleToOriginal
-  });
+    if (imgAspect > viewAspect) {
+      renderedW = containerSize.width;
+      renderedH = containerSize.width / imgAspect;
+      offsetX = 0;
+      offsetY = (containerSize.height - renderedH) / 2;
+    } else {
+      renderedH = containerSize.height;
+      renderedW = containerSize.height * imgAspect;
+      offsetX = (containerSize.width - renderedW) / 2;
+      offsetY = 0;
+    }
 
-  const mapOriginalToScreen = (p: {x: number, y: number}) => ({
-    x: p.x * scaleToView + offsetX,
-    y: p.y * scaleToView + offsetY
-  });
-  // ------------------------------
+    const scale = imgW / renderedW;
+
+    return {
+      x: (screenX - offsetX) * scale,
+      y: (screenY - offsetY) * scale,
+    };
+  };
+
+  const currentScale = (() => {
+    const imgW = imageWidth || 1200;
+    const imgH = imageHeight || 1600;
+    const imgAspect = imgW / imgH;
+    const viewAspect = containerSize.width / containerSize.height;
+    const renderedW = imgAspect > viewAspect ? containerSize.width : containerSize.height * imgAspect;
+    return imgW / renderedW;
+  })();
 
   const getTrueDistance = (p1: { x: number; y: number }, p2: { x: number; y: number }) => {
     if (pixelPerCm <= 0) return 0;
 
-    const trueP1 = mapScreenToOriginal(p1);
-    const trueP2 = mapScreenToOriginal(p2);
-
     if (homographyMatrix) {
-      const hp1 = applyHomography(trueP1, homographyMatrix);
-      const hp2 = applyHomography(trueP2, homographyMatrix);
+      const hp1 = applyHomography(p1, homographyMatrix);
+      const hp2 = applyHomography(p2, homographyMatrix);
       const dx = hp2.x - hp1.x;
       const dy = hp2.y - hp1.y;
       return Math.sqrt(dx * dx + dy * dy);
     } else {
-      return calculateDistanceCm(trueP1, trueP2, pixelPerCm);
+      return calculateDistanceCm(p1, p2, pixelPerCm);
     }
   };
 
@@ -230,7 +237,7 @@ export default function ResultScreen() {
     setPts(p => {
       const next = { ...p, [activeKey]: { x, y } };
       if (def.behavior === 'symmetry' && symmetryLocked) {
-        next[siblingKey] = { x: SCREEN_W - x, y };
+        next[siblingKey] = { x: (imageWidth || 1200) - x, y };
       } else if (def.behavior === 'vertical') {
         next[siblingKey] = { x, y: p[siblingKey].y };
       }
@@ -275,7 +282,7 @@ export default function ResultScreen() {
               id: Date.now().toString(),
               timestamp: Date.now(),
               measurements: {
-                garmentType: garmentType,
+                garmentType: garmentType as any,
                 width: calcCm('cl', 'cr'), // fallback dla spójności starej struktury
                 length: calcCm('lt', 'lb'),
                 shoulder: calcCm('sl', 'sr'),
@@ -321,19 +328,29 @@ export default function ResultScreen() {
           style={styles.imageContainer}
           onLayout={(e) => {
             const { width, height } = e.nativeEvent.layout;
-            setImageLayoutSize({ width, height });
+            setContainerSize({ width, height });
           }}
         >
           {/* GŁÓWNE EKRANOWE SVG */}
-          <Svg width="100%" height="100%" style={StyleSheet.absoluteFill}>
-            <SvgImage href={{ uri: imageUri }} width="100%" height="100%" preserveAspectRatio="xMidYMid meet" />
+          <Svg 
+            width="100%" 
+            height="100%" 
+            viewBox={`0 0 ${imageWidth || 1200} ${imageHeight || 1600}`}
+            preserveAspectRatio="xMidYMid meet"
+            style={StyleSheet.absoluteFill}
+          >
+            <SvgImage 
+              href={{ uri: imageUri }} 
+              x="0" 
+              y="0" 
+              width={imageWidth || 1200} 
+              height={imageHeight || 1600}
+              preserveAspectRatio="xMidYMid meet"
+            />
             
             {currentResult.arucoCorners && (
               <Polygon
-                points={currentResult.arucoCorners.map(c => {
-                  const mapped = mapOriginalToScreen(c);
-                  return `${mapped.x},${mapped.y}`;
-                }).join(' ')}
+                points={currentResult.arucoCorners.map(c => `${c.x},${c.y}`).join(' ')}
                 fill="rgba(105, 255, 71, 0.2)"
                 stroke="#69FF47"
                 strokeWidth="2"
@@ -370,11 +387,13 @@ export default function ResultScreen() {
               <React.Fragment key={`drag_${lineId}`}>
                 <DraggablePoint
                   id={def.p1} initialX={pts[def.p1].x} initialY={pts[def.p1].y}
+                  scale={currentScale}
                   onActive={(a, x, y) => setActivePoint(a ? { x, y } : null)}
                   onMove={(x, y) => handleMove(def, def.p1, def.p2, x, y)}
                 />
                 <DraggablePoint
                   id={def.p2} initialX={pts[def.p2].x} initialY={pts[def.p2].y}
+                  scale={currentScale}
                   onActive={(a, x, y) => setActivePoint(a ? { x, y } : null)}
                   onMove={(x, y) => handleMove(def, def.p2, def.p1, x, y)}
                 />
@@ -411,6 +430,16 @@ export default function ResultScreen() {
           )}
         </View>
 
+        {activePoint && homographyMatrix && (
+          <View style={{ paddingHorizontal: 16, paddingTop: 10, paddingBottom: 4 }}>
+            <Text style={{ color: '#00E5FF', fontSize: 10, fontFamily: 'monospace' }}>
+              {`LOG [Homography]
+Scrn: (${Math.round(activePoint.x)}, ${Math.round(activePoint.y)})
+Orig: (${Math.round(activePoint.x)}, ${Math.round(activePoint.y)})
+CM:   (${applyHomography(activePoint, homographyMatrix).x.toFixed(2)}, ${applyHomography(activePoint, homographyMatrix).y.toFixed(2)})`}
+            </Text>
+          </View>
+        )}
         <View style={styles.badgesRow}>
           <View style={[styles.badge, markerFound ? styles.badgeSuccess : styles.badgeWarning]}>
             <Ionicons name={markerFound ? 'checkmark-circle' : 'warning'} size={14} color={markerFound ? '#69FF47' : '#FFD700'} />
@@ -465,18 +494,29 @@ export default function ResultScreen() {
 
       {/* OFF-SCREEN SVG DLA EKSPORTU Z DOKLEJONĄ TABELKĄ */}
       <View style={{ position: 'absolute', top: -9999, left: -9999, zIndex: -10, opacity: 0 }}>
-        <Svg ref={exportSvgRef} width={SCREEN_W} height={IMAGE_HEIGHT + 70 + measurements.length * 36}>
-          <Rect x="0" y="0" width={SCREEN_W} height={IMAGE_HEIGHT + 70 + measurements.length * 36} fill="#111828" />
+        <Svg 
+          ref={exportSvgRef} 
+          width={imageWidth || 1200} 
+          height={(imageHeight || 1600) + 70 + measurements.length * 36}
+          viewBox={`0 0 ${imageWidth || 1200} ${(imageHeight || 1600) + 70 + measurements.length * 36}`}
+          preserveAspectRatio="xMidYMid meet"
+          style={{ position: 'absolute', opacity: 0 }}
+        >
+          <Rect x="0" y="0" width={imageWidth || 1200} height={(imageHeight || 1600) + 70 + measurements.length * 36} fill="#111828" />
           
           {/* Zdjęcie na górze */}
-          <SvgImage href={{ uri: imageUri }} width={SCREEN_W} height={IMAGE_HEIGHT} preserveAspectRatio="xMidYMid meet" />
+          <SvgImage 
+            href={{ uri: imageUri }} 
+            x="0" 
+            y="0"
+            width={imageWidth || 1200} 
+            height={imageHeight || 1600}
+            preserveAspectRatio="xMidYMid meet"
+          />
           
           {currentResult.arucoCorners && (
             <Polygon
-              points={currentResult.arucoCorners.map(c => {
-                const mapped = mapOriginalToScreen(c);
-                return `${mapped.x},${mapped.y}`;
-              }).join(' ')}
+              points={currentResult.arucoCorners.map(c => `${c.x},${c.y}`).join(' ')}
               fill="rgba(105, 255, 71, 0.2)"
               stroke="#69FF47"
               strokeWidth="2"
@@ -506,14 +546,14 @@ export default function ResultScreen() {
           })}
 
           {/* Tabelka doklejona pod zdjęciem */}
-          <SvgText x="16" y={IMAGE_HEIGHT + 30} fill="#FFFFFF" fontSize="20" fontWeight="bold">Podsumowanie Pomiarów</SvgText>
+          <SvgText x="16" y={(imageHeight || 1600) + 30} fill="#FFFFFF" fontSize="20" fontWeight="bold">Podsumowanie Pomiarów</SvgText>
           
           {measurements.map((m, idx) => (
             <G key={`tbl_${m.id}`}>
-              <Circle cx="24" cy={IMAGE_HEIGHT + 56 + idx * 36} r="6" fill={m.color} />
-              <SvgText x="40" y={IMAGE_HEIGHT + 62 + idx * 36} fill="#CCDDEE" fontSize="16" fontWeight="bold">{m.label}</SvgText>
+              <Circle cx="24" cy={(imageHeight || 1600) + 56 + idx * 36} r="6" fill={m.color} />
+              <SvgText x="40" y={(imageHeight || 1600) + 62 + idx * 36} fill="#CCDDEE" fontSize="16" fontWeight="bold">{m.label}</SvgText>
               {/* Zawsze używamy szablonu ze sztywnym miejscem po przecinku dla pięknego wyrównania w kolumnie */}
-              <SvgText x={SCREEN_W - 40} y={IMAGE_HEIGHT + 62 + idx * 36} fill={m.color} fontSize="18" fontWeight="bold" textAnchor="end">{`${m.value.toFixed(1)} cm`}</SvgText>
+              <SvgText x={(imageWidth || 1200) - 40} y={(imageHeight || 1600) + 62 + idx * 36} fill={m.color} fontSize="18" fontWeight="bold" textAnchor="end">{`${m.value.toFixed(1)} cm`}</SvgText>
             </G>
           ))}
         </Svg>
