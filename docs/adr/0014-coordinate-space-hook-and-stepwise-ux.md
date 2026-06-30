@@ -2,6 +2,7 @@
 
 > [!CAUTION]
 > Ten dokument rozszerza ADR 0013. ADR 0013 zdefiniował KTÓRA przestrzeń współrzędnych obowiązuje gdzie. Ten dokument definiuje JAK to jest wyliczane — w jednym miejscu, raz, i konsumowane wszędzie indziej. Powód: po wdrożeniu ADR 0013 trzy niezależne miejsca w `result.tsx` (hit-area `DraggablePoint`, transformacja lupy, grubość linii/tekstu SVG) zostały pominięte, bo każde z nich osobno liczyło skalę po swojemu zamiast czytać ją z jednego miejsca. Skutek: aplikacja stała się bezużyteczna (brak reakcji na dotyk, czarny ekran lupy, niewidoczne linie). Ten ADR istnieje żeby to się nie powtórzyło.
+
 ## Kontekst
 
 Po migracji na viewBox (ADR 0013) odkryto, że "przestrzeń obrazu" jako pojęcie nie wystarczy — potrzebny jest jeden, scentralizowany **mechanizm wyliczający** wszystkie pochodne tej przestrzeni (skalę, offsety, przeliczenia w obie strony), żeby żaden komponent nie mógł "wynaleźć" własnej, niespójnej wersji tej matematyki.
@@ -73,9 +74,21 @@ Istniejący badge `Skala: ArUco 10cm` / `Szacowanie` (oparty na `markerFound`) t
 ## Co NIE wchodzi w zakres tego ADR
 
 - Zmiana logiki `getTrueDistance`, `applyHomography`, `getPerspectiveTransform` — ta matematyka jest już poprawna i przetestowana (patrz `__tests__/geometry.test.ts`), nie jest ruszana.
-- Zmiana formatu eksportu (`exportSvgRef`) poza naprawą grubości linii/tekstu do proporcji zgodnej z nową rozdzielczością (dług z Aneksu C, ADR 0010) — naprawiana przy okazji tej migracji, bo i tak dotykamy tych samych linii kodu.
+- Zmiana formatu eksportu (`exportSvgRef`) poza naprawą grubości linii/tekstu do proporcji zgodnej z nową rozdzielczością (dług z Aneksu C, ADR 0013) — naprawiana przy okazji tej migracji, bo i tak dotykamy tych samych linii kodu.
 - Zmiana `GARMENT_CONFIG`, listy typów ubrań, ani definicji `LINE_DEFS` — struktura danych zostaje, zmienia się tylko SPOSÓB prezentacji i interakcji (plus dodanie trybu dowolnego pomiaru z Decyzji B punkt 3, który żyje OBOK tej struktury, nie zastępuje jej).
 
 ## Status
 
 Zaakceptowane. Obowiązuje od 2026-06-30. Implementacja w kolejnym kroku poprzez szczegółową instrukcję wykonawczą dla Agenta, zgodną z formatem ustalonym w poprzednich iteracjach (zasady bezwzględne, numerowane kroki, krok weryfikacyjny, zakaz zgadywania przy niejednoznaczności).
+
+## Notatka post-implementacyjna (2026-06-30) — regresja znaleziona po Etapie 4 i jej przyczyna
+
+Po wdrożeniu Etapów 1-3 i pierwszym teście na fizycznym telefonie (Etap 4) wykryto regresję NIEZWIĄZANĄ z matematyką przestrzeni współrzędnych (ADR 0013/0014 Decyzja A nie została naruszona — `coordSpace` działał poprawnie), tylko z cyklem życia komponentów React. Grep z Kroku 3.9 instrukcji wykonawczej (sprawdzający literały typu `strokeWidth`, `currentScale`) nie wykrył tego, bo przyczyna była behawioralna, nie tekstowa.
+
+**Przyczyna:** `<MeasurementPoint>` renderowany w kroku `measuring` nie miał propu `key` powiązanego z tożsamością aktywnej linii pomiarowej (`activeLineId`). React, widząc ten sam typ komponentu w tym samym miejscu drzewa przy zmianie zakładki, aktualizował propsy (w tym `initialX`/`initialY`) zamiast odmontować i zamontować komponent na nowo. Ponieważ `PanResponder` wewnątrz `MeasurementPoint` był tworzony raz przez `useRef`, zamykał w swoim domknięciu (closure) funkcję `onMove` z PIERWSZEGO renderowania — czyli zawsze zapisywał ruch pod kluczami pierwszej aktywnej linii ("Ramiona": `sl`/`sr`), niezależnie od tego, którą zakładkę użytkowniczka faktycznie miała otwartą. Skutek: wszystkie linie poza pierwszą wizualnie nie reagowały (bo `pts` dla nich nigdy się nie aktualizowało), a "Ramiona" po cichu nadpisywały się błędnymi wartościami z innych zakładek.
+
+Powiązany, niezależny błąd tej samej rundy: ukryte `<Svg ref={exportSvgRef}>` zostało w Etapie 3 przeniesione pod warunek `flowStep === 'summary'`, przez co montowało się dopiero przy wejściu w podsumowanie — `toDataURL()` było wywoływane zanim natywny silnik zdążył asynchronicznie zdekodować `<SvgImage>`, dając pusty eksport.
+
+**Zasada na przyszłość, analogiczna do reguł z ADR 0013:** każdy komponent renderowany dynamicznie w pętli lub warunkowo na podstawie zmiennego identyfikatora (tu: `activeLineId`) MUSI mieć `key` jednoznacznie powiązany z tym identyfikatorem, jeśli komponent przechowuje jakikolwiek stan lokalny (przez `useRef`, `useState`) który nie jest w pełni kontrolowany przez propsy z rodzica przy każdym renderze. Brak takiego klucza jest tej samej kategorii błędu co mieszanie `SCREEN_W` z `imageWidth` z ADR 0013 — coś co wygląda na drobny szczegół składniowy, a w praktyce cicho psuje dane bez rzucania wyjątku.
+
+Dodatkowo: elementy istniejące wyłącznie do efektu ubocznego poza ekranem (tu: ukryte SVG eksportu, `opacity: 0, top: -9999`) nie powinny być warunkowane przez `flowStep` ani żaden inny stan UI — powinny być renderowane bezwarunkowo przez cały czas życia ekranu, dokładnie tak jak były przed Etapem 3, niezależnie od tego, który krok przepływu jest aktualnie widoczny.
