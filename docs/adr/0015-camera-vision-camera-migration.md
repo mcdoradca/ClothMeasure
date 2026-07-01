@@ -79,6 +79,10 @@ Ponieważ ta migracja dotyka warstwy natywnej i może uszkodzić buildowalność
 
 6. **Etapowość z punktami zatrzymania.** Migracja wykonywana etapami (0: rozpoznanie środowiska, 1: instalacja+build, 2: przepisanie camera.tsx, 3: test). Po KAŻDYM etapie Agent zatrzymuje się i czeka na potwierdzenie człowieka. Żaden etap nie startuje bez potwierdzenia poprzedniego. W szczególności Etap 2 (przepisanie kodu) NIE startuje, dopóki człowiek nie potwierdzi że development build z Etapu 1 uruchamia się poprawnie.
 
+## Środowisko uruchomieniowe (Reguła dla Agentów)
+
+Środowisko uruchomieniowe: Aplikacja działa na własnym Dev Client (EAS build), NIE na Expo Go. Każdy nowy agent musi to założyć domyślnie. Pytanie „czy budujemy Dev Client" ma sens WYŁĄCZNIE gdy: (a) doszedł nowy moduł natywny od ostatniego buildu, (b) zmienił się app.json w sekcji natywnej (plugins, permissions, minSdk, package). W innych przypadkach expo start --dev-client wystarczy.
+
 ## Powiązania
 
 - ADR 0013 (kontrakt przestrzeni współrzędnych) — NIENARUSZONY, pomiar dostaje `uri` w tej samej przestrzeni co dotychczas.

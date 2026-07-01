@@ -65,6 +65,14 @@
           "savePhotosPermission": "ClothMeasure zapisuje zdjęcia z pomiarami do galerii.",
           "isAccessMediaLocationEnabled": true
         }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "minSdkVersion": 26
+          }
+        }
       ]
     ],
     "experiments": {
