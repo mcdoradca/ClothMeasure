@@ -9,7 +9,10 @@ import {
   Alert,
   Animated,
   Platform,
+  AppState,
 } from 'react-native';
+import { useIsFocused } from '@react-navigation/native';
+import { Accelerometer } from 'expo-sensors';
 import {
   Camera,
   useCameraDevice,
@@ -33,6 +36,42 @@ export default function CameraScreen() {
   const [zoom, setZoom] = useState(1);
   const cameraRef = useRef<Camera>(null);
   const setCapturedImageUri = useMeasurementStore((s) => s.setCapturedImageUri);
+
+  const isFocused = useIsFocused();
+  const [isForeground, setIsForeground] = useState(true);
+
+  useEffect(() => {
+    const subscription = AppState.addEventListener('change', (nextAppState) => {
+      setIsForeground(nextAppState === 'active');
+    });
+    return () => {
+      subscription.remove();
+    };
+  }, []);
+
+  const isActive = isFocused && isForeground;
+
+  const [tiltX, setTiltX] = useState(0);
+  const [tiltY, setTiltY] = useState(0);
+
+  useEffect(() => {
+    Accelerometer.setUpdateInterval(50);
+    const sub = Accelerometer.addListener(({ x, y }) => {
+      setTiltX(x);
+      setTiltY(y);
+    });
+    return () => sub.remove();
+  }, []);
+
+  // Wymiary okręgu poziomicy
+  const LEVEL_RADIUS = 25;
+  const BUBBLE_RADIUS = 7;
+  const maxOffset = LEVEL_RADIUS - BUBBLE_RADIUS;
+  
+  // Ograniczenie (clamp) do okręgu
+  const clampedX = Math.max(-maxOffset, Math.min(maxOffset, tiltX * -100));
+  const clampedY = Math.max(-maxOffset, Math.min(maxOffset, tiltY * 100));
+  const isLevel = Math.abs(tiltX) < 0.08 && Math.abs(tiltY) < 0.08; // ~5 stopni
 
   // Pobieramy natywne urządzenie dla wymaganego kierunku (facing)
   const defaultDevice = useCameraDevice(facing);
@@ -210,7 +249,7 @@ export default function CameraScreen() {
         style={StyleSheet.absoluteFill}
         device={device}
         format={format}
-        isActive={true}
+        isActive={isActive}
         photo={true}
         zoom={zoom}
         resizeMode="contain"
@@ -269,6 +308,24 @@ export default function CameraScreen() {
                 z markerem kalibracyjnym obok
               </Text>
             </View>
+
+            {/* Poziomica (żyroskop) */}
+            <View style={[styles.levelContainer, { borderColor: isLevel ? '#00E5FF' : 'rgba(255, 255, 255, 0.4)' }]}>
+              <View style={styles.levelCrosshair} />
+              <Animated.View 
+                style={[
+                  styles.levelBubble, 
+                  { 
+                    transform: [
+                      { translateX: clampedX }, 
+                      { translateY: clampedY } 
+                    ],
+                    backgroundColor: isLevel ? '#00E5FF' : '#FF3366'
+                  }
+                ]} 
+              />
+            </View>
+
           </View>
         </View>
 
@@ -412,6 +469,31 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.6)',
     textAlign: 'center',
     lineHeight: 20,
+  },
+  levelContainer: {
+    position: 'absolute',
+    top: -80,
+    alignSelf: 'center',
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    borderWidth: 2,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: 'rgba(0,0,0,0.3)',
+  },
+  levelCrosshair: {
+    position: 'absolute',
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: 'rgba(255,255,255,0.8)',
+  },
+  levelBubble: {
+    position: 'absolute',
+    width: 14,
+    height: 14,
+    borderRadius: 7,
   },
 
   bottomBar: {
