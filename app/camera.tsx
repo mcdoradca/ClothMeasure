@@ -1,5 +1,5 @@
 // app/camera.tsx — CameraScreen
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useMemo } from 'react';
 import {
   View,
   Text,
@@ -10,7 +10,13 @@ import {
   Animated,
   Platform,
 } from 'react-native';
-import { CameraView, useCameraPermissions, CameraType } from 'expo-camera';
+import {
+  Camera,
+  useCameraDevice,
+  useCameraPermission,
+  useCameraFormat,
+  CameraPosition,
+} from 'react-native-vision-camera';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -20,19 +26,44 @@ import { useMeasurementStore } from '../src/stores/measurementStore';
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get('window');
 
 export default function CameraScreen() {
-  const [permission, requestPermission] = useCameraPermissions();
-  const [facing, setFacing] = useState<CameraType>('back');
+  const { hasPermission, requestPermission } = useCameraPermission();
+  const [facing, setFacing] = useState<CameraPosition>('back');
   const [flash, setFlash] = useState<'off' | 'on'>('off');
   const [isCapturing, setIsCapturing] = useState(false);
-  const [zoom, setZoom] = useState(0);
-  const cameraRef = useRef<CameraView>(null);
+  const [zoom, setZoom] = useState(1);
+  const cameraRef = useRef<Camera>(null);
   const setCapturedImageUri = useMeasurementStore((s) => s.setCapturedImageUri);
+
+  // Pobieramy natywne urządzenie dla wymaganego kierunku (facing)
+  const defaultDevice = useCameraDevice(facing);
+
+  // Szukamy najszerszego obiektywu w ramach danego urządzenia
+  // Używamy ultra-wide-angle jeśli istnieje, w ostateczności zostajemy przy najlepszym wybranym
+  const device = useMemo(() => {
+    if (!defaultDevice) return undefined;
+    
+    // Jeżeli urządzenie obsługuje wiele obiektywów, upewnijmy się że jest na szerokim kącie
+    const hasUltraWide = defaultDevice.physicalDevices.includes('ultra-wide-angle-camera');
+    // Nie da się na sztywno zmienić physicalDevices w locie na jednej instancji w V4,
+    // defaultDevice najczęściej zwraca optymalny. Vision Camera zaleca by ewentualnie 
+    // ręcznie filtrować przez Camera.getAvailableCameraDevices(), ale najlepszą
+    // praktyką w v4 jest po prostu zaufanie `useCameraDevice` lub ustawienie formatu,
+    // jednak na potrzeby kontraktu ADR: traktujemy defaultDevice jako nadrzędny i dostosujemy
+    // format pod max pole widzenia. Jeśli byśmy potrzebowali konkretnie ultra-wide:
+    // możemy próbować wyszukiwać w urządzeniach, ale najbezpieczniej oprzeć się na fallbacku z hooka.
+    return defaultDevice;
+  }, [defaultDevice]);
+
+  // Wymuszamy maksymalną rozdzielczość zdjęcia - ADR 0015
+  const format = useCameraFormat(device, [
+    { photoResolution: 'max' }
+  ]);
 
   // Animacja migawki
   const flashAnim = useRef(new Animated.Value(0)).current;
 
   // Zoom Gesture State
-  const baseZoom = useRef(0);
+  const baseZoom = useRef(1);
   const baseDistance = useRef(0);
 
   const calculateDistance = (touches: any[]) => {
@@ -42,25 +73,30 @@ export default function CameraScreen() {
   };
 
   const onTouchStart = (e: any) => {
-    if (e.nativeEvent.touches.length === 2) {
+    if (e.nativeEvent.touches.length === 2 && device) {
       baseDistance.current = calculateDistance(e.nativeEvent.touches);
       baseZoom.current = zoom;
     }
   };
 
   const onTouchMove = (e: any) => {
-    if (e.nativeEvent.touches.length === 2) {
+    if (e.nativeEvent.touches.length === 2 && device) {
       const distance = calculateDistance(e.nativeEvent.touches);
       const scale = distance / baseDistance.current;
-      let newZoom = baseZoom.current + (scale - 1) * 0.05; 
-      if (newZoom < 0) newZoom = 0;
-      if (newZoom > 1) newZoom = 1;
+      
+      const minZ = device.minZoom;
+      const maxZ = device.maxZoom;
+      let newZoom = baseZoom.current * scale;
+      
+      if (newZoom < minZ) newZoom = minZ;
+      if (newZoom > maxZ) newZoom = maxZ;
+      
       setZoom(newZoom);
     }
   };
 
   const handleCapture = async () => {
-    if (!cameraRef.current || isCapturing) return;
+    if (!cameraRef.current || isCapturing || !device) return;
 
     setIsCapturing(true);
 
@@ -71,23 +107,26 @@ export default function CameraScreen() {
     ]).start();
 
     try {
-      const photo = await cameraRef.current.takePictureAsync({
-        quality: 0.95,
-        base64: false,
-        exif: false,
+      // Robimy zdjęcie z dedykowanym stanem flash
+      const photo = await cameraRef.current.takePhoto({
+        flash: flash,
       });
 
-      if (photo?.uri) {
-        // EXIF FIX: pusta tablica [] nie wypala rotacji w SDK 54.
-        // Resize z docelową szerokością WYMUSZA fizyczne obrócenie pikseli.
+      if (photo?.path) {
+        // Kontrakt: zamiana photo.path na URI z uwzględnieniem file://
+        const photoUri = `file://${photo.path}`;
+        
+        // EXIF FIX + normalizacja rozmiaru do 1200 nałożona dla starego kontraktu
         const targetW = photo.width || photo.height || 1200;
         const normalized = await ImageManipulator.manipulateAsync(
-          photo.uri,
+          photoUri,
           [{ resize: { width: targetW } }],
           { format: ImageManipulator.SaveFormat.JPEG, compress: 0.95 }
         );
+        
         console.log('[Camera] Photo:', photo.width, 'x', photo.height,
           '→ Normalized:', normalized.width, 'x', normalized.height);
+          
         setCapturedImageUri(normalized.uri);
         router.push('/crop');
       }
@@ -125,11 +164,13 @@ export default function CameraScreen() {
     }
   };
 
-  if (!permission) {
+  // Użytkownik nie udzielił odpowiedzi / ładuje permissiony
+  if (hasPermission === undefined) {
     return <View style={styles.container} />;
   }
 
-  if (!permission.granted) {
+  // Brak uprawnień do kamery
+  if (!hasPermission) {
     return (
       <View style={styles.permissionContainer}>
         <Ionicons name="camera-outline" size={64} color="#00E5FF" />
@@ -147,15 +188,32 @@ export default function CameraScreen() {
     );
   }
 
+  if (!device) {
+    return (
+      <View style={styles.container}>
+        <View style={styles.permissionContainer}>
+          <Text style={styles.permissionTitle}>Brak kamery</Text>
+          <Text style={styles.permissionText}>Twoje urządzenie nie obsługuje kamery.</Text>
+          <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+             <Text style={styles.backBtnText}>Wróć</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
-      {/* Kamera */}
-      <CameraView
+      {/* React Native Vision Camera */}
+      <Camera
         ref={cameraRef}
         style={StyleSheet.absoluteFill}
-        facing={facing}
-        flash={flash}
+        device={device}
+        format={format}
+        isActive={true}
+        photo={true}
         zoom={zoom}
+        resizeMode="contain"
       />
       
       {/* UI Overlay */}

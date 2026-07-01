@@ -52,6 +52,13 @@
         }
       ],
       [
+        "react-native-vision-camera",
+        {
+          "cameraPermissionText": "ClothMeasure potrzebuje dostępu do kamery, aby fotografować ubrania i dokonywać ich pomiarów.",
+          "enableCameraPermission": true
+        }
+      ],
+      [
         "expo-media-library",
         {
           "photosPermission": "ClothMeasure zapisuje zdjęcia z pomiarami do galerii.",
@@ -66,7 +73,7 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "97c6607d-4d79-4e0e-a889-42446d02378c"
+        "projectId": "9187fc75-f4ec-4c4d-8623-6a7797c2d598"
       }
     },
     "owner": "n-e-s"
