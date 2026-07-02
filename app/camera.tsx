@@ -12,7 +12,7 @@ import {
   AppState,
 } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
-import { Accelerometer } from 'expo-sensors';
+import Accelerometer from 'expo-sensors/build/Accelerometer';
 import {
   Camera,
   useCameraDevice,
