@@ -9,9 +9,9 @@ import {
   Alert,
   Animated,
   Platform,
-  AppState,
 } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
+import { useIsForeground } from '../src/hooks/useIsForeground';
 import Accelerometer from 'expo-sensors/build/Accelerometer';
 import {
   Camera,
@@ -38,16 +38,7 @@ export default function CameraScreen() {
   const setCapturedImageUri = useMeasurementStore((s) => s.setCapturedImageUri);
 
   const isFocused = useIsFocused();
-  const [isForeground, setIsForeground] = useState(true);
-
-  useEffect(() => {
-    const subscription = AppState.addEventListener('change', (nextAppState) => {
-      setIsForeground(nextAppState === 'active');
-    });
-    return () => {
-      subscription.remove();
-    };
-  }, []);
+  const isForeground = useIsForeground();
 
   const isActive = isFocused && isForeground;
 
